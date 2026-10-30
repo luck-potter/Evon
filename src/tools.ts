@@ -1,8 +1,36 @@
 import type { ToolCall } from "./types.ts";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 
 export async function runBash(_command: string): Promise<string> {
   // TODO 1：执行命令，返回 stdout、stderr、退出码，并限制执行时间。
-  throw new Error("run_bash 尚未实现");
+  const execPromise = promisify(exec);
+  const timeoutSignal = AbortSignal.timeout(5_000);
+
+  try {
+    const { stdout, stderr } = await execPromise(_command, {
+      signal: timeoutSignal,
+    });
+    return JSON.stringify({
+      stdout,
+      stderr,
+      exitCode: 0,
+      timedOut: false,
+    });
+  } catch (error) {
+    const err = error as Error & {
+      stdout?: string;
+      stderr?: string;
+      code?: number | string | null;
+    };
+
+    return JSON.stringify({
+      stdout: err.stdout ?? "",
+      stderr: err.stderr ?? "",
+      exitCode: typeof err.code === "number" ? err.code : null,
+      timedOut: timeoutSignal.aborted,
+    });
+  }
 }
 
 export async function readFile(_path: string): Promise<string> {

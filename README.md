@@ -4,7 +4,7 @@
 
 ## 启动
 
-需要 Node.js 24+。直接运行 TypeScript，只有类型检查需要开发依赖。
+需要 Node.js 24+。直接运行 TypeScript，类型检查和测试需要安装开发依赖。
 
 ```bash
 npm install
@@ -24,6 +24,32 @@ src/
 ├── tools.ts   # 三个原子工具和统一分发
 └── types.ts   # 对话消息、工具调用的类型
 ```
+
+## runBash 测试
+
+```bash
+npm test
+npm run test:watch
+npm run typecheck
+```
+
+测试位于 `tests/run-bash.test.ts`，使用 Vitest 的 `describe`、`it` 和 `expect`。
+`npm test` 单次运行全部测试；`npm run test:watch` 监听代码变化，自动重跑测试。
+测试会真实执行本地 Node 命令，覆盖正常输出、stderr 警告、空输出、多行中文输出、非零退出和超时。
+命令的引号转义适用于当前的 macOS/Linux shell；其中超时用例会实际等待约 5 秒。
+`vitest.config.ts` 将单个用例的超时设为 12 秒，留出验证 `runBash` 自身超时行为的时间。
+
+为准确检查输出和状态，测试约定 `runBash` 返回 JSON 字符串，例如：
+
+```json
+{"stdout":"hello\n","stderr":"","exitCode":0,"timedOut":false}
+```
+
+- 正常完成：`exitCode` 为 `0`；即使有 stderr 输出也不代表失败。
+- 非零退出：返回实际退出码，同时保留 stdout 和 stderr，不直接抛出命令执行错误。
+- 超时：`timedOut` 为 `true`，`exitCode` 为 `null`，保留超时前已收集的两种输出。
+
+这些测试是下一步完善 `runBash` 的验收标准；当前实现尚未满足全部约定，运行时会有失败用例。
 
 ## 接下来逐步完成
 

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -12,7 +14,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   },
   "volta": {
     "node": "24.22.0",
