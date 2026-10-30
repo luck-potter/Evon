@@ -1,28 +1,19 @@
 import type { ToolCall } from "./types.ts";
-import { exec } from "node:child_process";
+import { exec, type ExecException } from "node:child_process";
 import { promisify } from "node:util";
 
-export async function runBash(_command: string): Promise<string> {
-  // TODO 1：执行命令，返回 stdout、stderr、退出码，并限制执行时间。
-  const execPromise = promisify(exec);
+const execCommand = promisify(exec);
+
+export async function runBash(command: string): Promise<string> {
   const timeoutSignal = AbortSignal.timeout(5_000);
 
   try {
-    const { stdout, stderr } = await execPromise(_command, {
+    const { stdout, stderr } = await execCommand(command, {
       signal: timeoutSignal,
     });
-    return JSON.stringify({
-      stdout,
-      stderr,
-      exitCode: 0,
-      timedOut: false,
-    });
+    return JSON.stringify({ stdout, stderr, exitCode: 0, timedOut: false });
   } catch (error) {
-    const err = error as Error & {
-      stdout?: string;
-      stderr?: string;
-      code?: number | string | null;
-    };
+    const err = error as ExecException;
 
     return JSON.stringify({
       stdout: err.stdout ?? "",
