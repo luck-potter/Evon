@@ -1,7 +1,7 @@
 import type { ToolCall } from "./types.ts";
 import { exec, type ExecException } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile as fsReadFile } from "node:fs/promises";
+import { readFile as fsReadFile, writeFile } from "node:fs/promises";
 
 const execCommand = promisify(exec);
 
@@ -33,28 +33,34 @@ export async function readFile(path: string): Promise<string> {
 }
 
 export async function editFile(
-  _path: string,
-  _oldStr: string,
-  _newStr: string,
+  path: string,
+  oldStr: string,
+  newStr: string,
 ): Promise<string> {
-  // TODO 3：检查 old_str 唯一匹配后替换；约定新文件如何创建。
-  throw new Error("edit_file 尚未实现");
+  if (!oldStr) return "文件未修改：old_str 为空";
+
+  const content = await fsReadFile(path, "utf-8");
+  const firstIndex = content.indexOf(oldStr);
+  if (firstIndex === -1) return "文件未修改：未找到 old_str";
+  if (firstIndex !== content.lastIndexOf(oldStr)) {
+    return "文件未修改：old_str 匹配多处，请提供更完整的旧文本";
+  }
+
+  await writeFile(path, content.replace(oldStr, () => newStr), "utf-8");
+  return `文件修改成功：${path}`;
 }
 
 // 工具失败也返回给模型，让主循环有机会根据错误继续处理。
 export async function executeTool(call: ToolCall): Promise<string> {
   try {
-    switch (call.name) {
+    const { name, arguments: args } = call;
+    switch (name) {
       case "run_bash":
-        return await runBash(call.arguments.command);
+        return await runBash(args.command);
       case "read_file":
-        return await readFile(call.arguments.path);
+        return await readFile(args.path);
       case "edit_file":
-        return await editFile(
-          call.arguments.path,
-          call.arguments.old_str,
-          call.arguments.new_str,
-        );
+        return await editFile(args.path, args.old_str, args.new_str);
     }
   } catch (error) {
     return `工具执行失败：${error instanceof Error ? error.message : String(error)}`;
