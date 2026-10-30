@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.ts",
+    "start": "node --env-file=.env src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -20,5 +20,8 @@
   "volta": {
     "node": "24.22.0",
     "npm": "11.19.1"
+  },
+  "dependencies": {
+    "openai": "^7.45.1"
   }
 }
