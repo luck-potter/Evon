@@ -1,7 +1,10 @@
 import type { ToolCall } from "./types.ts";
 import { exec, type ExecException } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile as fsReadFile, writeFile } from "node:fs/promises";
+import {
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+} from "node:fs/promises";
 
 const execCommand = promisify(exec);
 
@@ -32,6 +35,11 @@ export async function readFile(path: string): Promise<string> {
     .join("\n");
 }
 
+export async function writeFile(path: string, content: string): Promise<string> {
+  await fsWriteFile(path, content, "utf-8");
+  return `文件写入成功：${path}`;
+}
+
 export async function editFile(
   path: string,
   oldStr: string,
@@ -46,7 +54,7 @@ export async function editFile(
     return "文件未修改：old_str 匹配多处，请提供更完整的旧文本";
   }
 
-  await writeFile(path, content.replace(oldStr, () => newStr), "utf-8");
+  await fsWriteFile(path, content.replace(oldStr, () => newStr), "utf-8");
   return `文件修改成功：${path}`;
 }
 
@@ -59,6 +67,8 @@ export async function executeTool(call: ToolCall): Promise<string> {
         return await runBash(args.command);
       case "read_file":
         return await readFile(args.path);
+      case "write_file":
+        return await writeFile(args.path, args.content);
       case "edit_file":
         return await editFile(args.path, args.old_str, args.new_str);
     }

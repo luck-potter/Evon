@@ -4,6 +4,11 @@ export type ToolCall =
   | { id: string; name: "read_file"; arguments: { path: string } }
   | {
       id: string;
+      name: "write_file";
+      arguments: { path: string; content: string };
+    }
+  | {
+      id: string;
       name: "edit_file";
       arguments: { path: string; old_str: string; new_str: string };
     };
