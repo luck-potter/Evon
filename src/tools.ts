@@ -1,6 +1,7 @@
 import type { ToolCall } from "./types.ts";
 import { exec, type ExecException } from "node:child_process";
 import { promisify } from "node:util";
+import { readFile as fsReadFile } from "node:fs/promises";
 
 const execCommand = promisify(exec);
 
@@ -24,9 +25,11 @@ export async function runBash(command: string): Promise<string> {
   }
 }
 
-export async function readFile(_path: string): Promise<string> {
-  // TODO 2：读取文件，给每行附上行号。
-  throw new Error("read_file 尚未实现");
+export async function readFile(path: string): Promise<string> {
+  return (await fsReadFile(path, "utf-8"))
+    .split("\n")
+    .map((line, index) => `${index + 1}: ${line}`)
+    .join("\n");
 }
 
 export async function editFile(

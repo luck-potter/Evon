@@ -5,6 +5,6 @@ export async function callModel(_messages: Message[]): Promise<ModelReply> {
   // 当前是占位回复，不会请求 API，也不会自主执行工具。
   return {
     role: "assistant",
-    content: "骨架已跑通（占位回复）。下一步：实现 src/tools.ts 中的 runBash。",
+    content: "骨架已跑通（占位回复）。下一步：实现 src/tools.ts 中的 editFile。",
   };
 }
