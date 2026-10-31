@@ -1,13 +1,90 @@
-import type { Message, ModelReply } from "./types.ts";
+import type { Message, ModelReply, ToolCall as AgentToolCall } from "./types.ts";
 import { toolDefinitions } from "./tool-definitions.ts";
 import OpenAI from "openai";
 
 export type ToolCall = OpenAI.Responses.ResponseFunctionToolCall;
 
-export async function callModel(message: Message[]): Promise<ModelReply> {
-  // TODO 4：解析模型回复和工具调用，转换工具结果消息。
-  // 当前已发送消息和工具定义，尚未解析真实回复。
+function parseToolCall(call: ToolCall): AgentToolCall {
+  if (!call.call_id) throw new Error(`工具 ${call.name} 缺少 call_id。`);
 
+  let args: unknown;
+  try {
+    args = JSON.parse(call.arguments);
+  } catch {
+    throw new Error(`工具 ${call.name} 的参数不是有效 JSON。`);
+  }
+
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    throw new Error(`工具 ${call.name} 的参数必须是对象。`);
+  }
+
+  const values = args as Record<string, unknown>;
+  const readString = (key: string): string => {
+    const value = values[key];
+    if (typeof value !== "string") {
+      throw new Error(`工具 ${call.name} 的参数 ${key} 必须是字符串。`);
+    }
+    return value;
+  };
+
+  const id = call.call_id;
+  switch (call.name) {
+    case "run_bash":
+      return { id, name: call.name, arguments: { command: readString("command") } };
+    case "read_file":
+      return { id, name: call.name, arguments: { path: readString("path") } };
+    case "write_file":
+      return {
+        id,
+        name: call.name,
+        arguments: { path: readString("path"), content: readString("content") },
+      };
+    case "edit_file":
+      return {
+        id,
+        name: call.name,
+        arguments: {
+          path: readString("path"),
+          old_str: readString("old_str"),
+          new_str: readString("new_str"),
+        },
+      };
+    default:
+      throw new Error(`未知工具：${call.name}`);
+  }
+}
+
+function toResponseInput(messages: Message[]): OpenAI.Responses.ResponseInput {
+  return messages.flatMap((message): OpenAI.Responses.ResponseInput => {
+    if (message.role === "tool") {
+      return [{
+        type: "function_call_output",
+        call_id: message.toolCallId,
+        output: message.content,
+      }];
+    }
+
+    const input: OpenAI.Responses.ResponseInput = [];
+    if (message.role !== "assistant" || message.content) {
+      input.push({ role: message.role, content: message.content });
+    }
+
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) {
+        input.push({
+          type: "function_call",
+          call_id: call.id,
+          name: call.name,
+          arguments: JSON.stringify(call.arguments),
+        });
+      }
+    }
+
+    return input;
+  });
+}
+
+export async function callModel(message: Message[]): Promise<ModelReply> {
   if (!process.env.BASE_URL || !process.env.MODEL || !process.env.API_KEY) {
     throw new Error("请在 .env 文件中设置 BASE_URL、MODEL 和 API_KEY。");
   }
@@ -19,8 +96,25 @@ export async function callModel(message: Message[]): Promise<ModelReply> {
 
   const response = await client.responses.create({
     model: process.env.MODEL,
+    input: toResponseInput(message),
     tools: toolDefinitions,
   });
 
-  return {};
+  if (response.error) {
+    throw new Error(`模型回复失败：${response.error.message}`);
+  }
+  if (response.status && response.status !== "completed") {
+    const reason = response.incomplete_details?.reason ?? response.status;
+    throw new Error(`模型回复未完成：${reason}`);
+  }
+
+  const toolCalls = response.output
+    .filter((item): item is ToolCall => item.type === "function_call")
+    .map(parseToolCall);
+
+  return {
+    role: "assistant",
+    content: response.output_text,
+    ...(toolCalls.length ? { toolCalls } : {}),
+  };
 }

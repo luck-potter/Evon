@@ -1,4 +1,6 @@
-export const toolDefinitions = [
+import type OpenAI from "openai";
+
+export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
   {
     type: "function",
     name: "run_bash",
