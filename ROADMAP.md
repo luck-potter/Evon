@@ -30,7 +30,7 @@
   - 改造 `llm.ts` 对接模型的流式 API，实时打字机回显内容与工具调用状态。
 - [x] **交互式 REPL 会话**
   - 改造 `index.ts`，基于 Node.js `readline/promises` 实现连续对话，任务结束后等待用户输入，支持追问与修正。
-- [ ] **优雅打断（AbortSignal / Ctrl+C）**
+- [x] **优雅打断（AbortSignal / Ctrl+C）**
   - 捕获 `SIGINT`，当模型正在生成或 Bash 正在运行时按一次仅中断当前操作，向上下文回填 `Cancelled by user`，不杀死整个进程。
 
 ---
