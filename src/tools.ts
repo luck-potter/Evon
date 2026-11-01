@@ -6,6 +6,8 @@ import {
   writeFile as fsWriteFile,
 } from "node:fs/promises";
 
+import { truncateHead, truncateTail } from "./utils/truncate.ts";
+
 const execCommand = promisify(exec);
 
 export async function runBash(
@@ -18,13 +20,18 @@ export async function runBash(
     const { stdout, stderr } = await execCommand(command, {
       signal: timeoutSignal,
     });
-    return JSON.stringify({ stdout, stderr, exitCode: 0, timedOut: false });
+    return JSON.stringify({
+      stdout: truncateTail(stdout),
+      stderr: truncateTail(stderr),
+      exitCode: 0,
+      timedOut: false,
+    });
   } catch (error) {
     const err = error as ExecException;
 
     return JSON.stringify({
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
+      stdout: truncateTail(err.stdout ?? ""),
+      stderr: truncateTail(err.stderr ?? ""),
       exitCode: typeof err.code === "number" ? err.code : null,
       timedOut: timeoutSignal.aborted,
     });
@@ -32,10 +39,11 @@ export async function runBash(
 }
 
 export async function readFile(path: string): Promise<string> {
-  return (await fsReadFile(path, "utf-8"))
+  const text = (await fsReadFile(path, "utf-8"))
     .split("\n")
     .map((line, index) => `${index + 1}: ${line}`)
     .join("\n");
+  return truncateHead(text);
 }
 
 export async function writeFile(
