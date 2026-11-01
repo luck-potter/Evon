@@ -9,7 +9,7 @@ import {
 const execCommand = promisify(exec);
 
 export async function runBash(command: string): Promise<string> {
-  const timeoutSignal = AbortSignal.timeout(5_000);
+  const timeoutSignal = AbortSignal.timeout(30_000);
 
   try {
     const { stdout, stderr } = await execCommand(command, {
@@ -35,7 +35,10 @@ export async function readFile(path: string): Promise<string> {
     .join("\n");
 }
 
-export async function writeFile(path: string, content: string): Promise<string> {
+export async function writeFile(
+  path: string,
+  content: string,
+): Promise<string> {
   await fsWriteFile(path, content, "utf-8");
   return `文件写入成功：${path}`;
 }
@@ -54,7 +57,11 @@ export async function editFile(
     return "文件未修改：old_str 匹配多处，请提供更完整的旧文本";
   }
 
-  await fsWriteFile(path, content.replace(oldStr, () => newStr), "utf-8");
+  await fsWriteFile(
+    path,
+    content.replace(oldStr, () => newStr),
+    "utf-8",
+  );
   return `文件修改成功：${path}`;
 }
 

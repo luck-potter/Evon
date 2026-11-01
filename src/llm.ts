@@ -4,6 +4,13 @@ import OpenAI from "openai";
 
 export type ToolCall = OpenAI.Responses.ResponseFunctionToolCall;
 
+const toolArgKeys: Record<string, string[]> = {
+  run_bash: ["command"],
+  read_file: ["path"],
+  write_file: ["path", "content"],
+  edit_file: ["path", "old_str", "new_str"],
+};
+
 function parseToolCall(call: ToolCall): AgentToolCall {
   if (!call.call_id) throw new Error(`工具 ${call.name} 缺少 call_id。`);
 
@@ -18,40 +25,17 @@ function parseToolCall(call: ToolCall): AgentToolCall {
     throw new Error(`工具 ${call.name} 的参数必须是对象。`);
   }
 
+  const keys = toolArgKeys[call.name];
+  if (!keys) throw new Error(`未知工具：${call.name}`);
+
   const values = args as Record<string, unknown>;
-  const readString = (key: string): string => {
-    const value = values[key];
-    if (typeof value !== "string") {
+  for (const key of keys) {
+    if (typeof values[key] !== "string") {
       throw new Error(`工具 ${call.name} 的参数 ${key} 必须是字符串。`);
     }
-    return value;
-  };
-
-  const id = call.call_id;
-  switch (call.name) {
-    case "run_bash":
-      return { id, name: call.name, arguments: { command: readString("command") } };
-    case "read_file":
-      return { id, name: call.name, arguments: { path: readString("path") } };
-    case "write_file":
-      return {
-        id,
-        name: call.name,
-        arguments: { path: readString("path"), content: readString("content") },
-      };
-    case "edit_file":
-      return {
-        id,
-        name: call.name,
-        arguments: {
-          path: readString("path"),
-          old_str: readString("old_str"),
-          new_str: readString("new_str"),
-        },
-      };
-    default:
-      throw new Error(`未知工具：${call.name}`);
   }
+
+  return { id: call.call_id, name: call.name, arguments: values } as AgentToolCall;
 }
 
 function toResponseInput(messages: Message[]): OpenAI.Responses.ResponseInput {
