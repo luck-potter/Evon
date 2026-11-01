@@ -19,14 +19,58 @@ function functionCall(name: string, args: unknown) {
   };
 }
 
-function response(output: unknown[] = [], text = "") {
-  return {
-    status: "completed",
-    error: null,
-    incomplete_details: null,
-    output,
-    output_text: text,
-  };
+function response(
+  output: unknown[] = [],
+  text = "",
+  extras?: {
+    status?: string;
+    error?: { message: string } | null;
+    incomplete_details?: { reason: string } | null;
+  },
+) {
+  return (async function* () {
+    if (text) {
+      yield { type: "response.output_text.delta", delta: text };
+    }
+    for (const item of output) {
+      yield { type: "response.output_item.added", item };
+    }
+    const status = extras?.status ?? "completed";
+    if (status === "failed") {
+      yield {
+        type: "response.failed",
+        response: {
+          status: "failed",
+          error: extras?.error ?? { message: "生成失败" },
+          output,
+          output_text: text,
+        },
+      };
+      return;
+    }
+    if (status === "incomplete") {
+      yield {
+        type: "response.incomplete",
+        response: {
+          status: "incomplete",
+          incomplete_details: extras?.incomplete_details ?? { reason: "max_output_tokens" },
+          output,
+          output_text: text,
+        },
+      };
+      return;
+    }
+    yield {
+      type: "response.completed",
+      response: {
+        status: "completed",
+        error: null,
+        incomplete_details: null,
+        output,
+        output_text: text,
+      },
+    };
+  })();
 }
 
 describe("callModel", () => {
@@ -52,12 +96,13 @@ describe("callModel", () => {
     expect(createResponse).toHaveBeenCalledWith(expect.objectContaining({
       model: "test-model",
       input: messages,
+      stream: true,
     }));
   });
 
   it("解析四种工具，使用 call_id 并保留空字符串及特殊字符", async () => {
     const calls = [
-      { name: "run_bash", args: { command: "printf '你好\\n'" } },
+      { name: "run_bash", args: { command: "printf '你好\n'" } },
       { name: "read_file", args: { path: "目录/文件.txt" } },
       { name: "write_file", args: { path: "empty.txt", content: "" } },
       { name: "edit_file", args: { path: "a.ts", old_str: "旧\n$&", new_str: "" } },
@@ -97,7 +142,7 @@ describe("callModel", () => {
         type: "function_call",
         call_id: "call_read_file",
         name: "read_file",
-        arguments: '{"path":"README.md"}',
+        arguments: "{\"path\":\"README.md\"}",
       },
       {
         type: "function_call_output",
@@ -139,20 +184,44 @@ describe("callModel", () => {
   });
 
   it("将生成失败作为错误返回", async () => {
-    createResponse.mockResolvedValue({
-      ...response(),
-      status: "failed",
-      error: { message: "生成失败" },
-    });
+    createResponse.mockResolvedValue(
+      response([], "", {
+        status: "failed",
+        error: { message: "生成失败" },
+      }),
+    );
     await expect(callModel([])).rejects.toThrow("模型回复失败：生成失败");
   });
 
   it("不将截断的回复当作完整结果", async () => {
-    createResponse.mockResolvedValue({
-      ...response([], "尚未完成的文本"),
-      status: "incomplete",
-      incomplete_details: { reason: "max_output_tokens" },
-    });
+    createResponse.mockResolvedValue(
+      response([], "尚未完成的文本", {
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+      }),
+    );
     await expect(callModel([])).rejects.toThrow("模型回复未完成：max_output_tokens");
+  });
+
+  it("触发 onTextDelta 和 onToolCall 回调", async () => {
+    const onTextDelta = vi.fn();
+    const onToolCall = vi.fn();
+    createResponse.mockResolvedValue(
+      response([functionCall("read_file", { path: "a.txt" })], "思考中..."),
+    );
+
+    await callModel([], { onTextDelta, onToolCall });
+
+    expect(onTextDelta).toHaveBeenCalledWith("思考中...");
+    expect(onToolCall).toHaveBeenCalledWith({ name: "read_file" });
+  });
+
+  it("当 stream 抛出 error 事件时抛出错误", async () => {
+    createResponse.mockResolvedValue(
+      (async function* () {
+        yield { type: "error", message: "网络连接中断" };
+      })(),
+    );
+    await expect(callModel([])).rejects.toThrow("模型回复失败：网络连接中断");
   });
 });
