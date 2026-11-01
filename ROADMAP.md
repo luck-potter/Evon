@@ -14,7 +14,7 @@
 - [x] **输出截断（Output Truncation）**
   - 为 `run_bash` 和 `read_file` 增加行数与字符数上限（如 1000 行 / 30KB）。
   - 超出限制时保留首尾内容，并在中间插入 `[... truncated N lines ...]` 提示。
-- [ ] **升级 Bash 执行器**
+- [x] **升级 Bash 执行器**
   - 从 `child_process.exec` 改用 `child_process.spawn`，避免单次大输出冲垮 `maxBuffer` 导致进程直接崩溃。
 - [x] **`read_file` 支持分页/切片**
   - 新增可选参数 `offset`（起始行）与 `limit`（读取行数），避免读大文件时一次性打满上下文。
