@@ -19,11 +19,29 @@ export async function runAgent(task: string, maxSteps = 30): Promise<string> {
 
   for (let step = 0; step < maxSteps; step++) {
     console.log(`\n[步骤 ${step + 1}/${maxSteps}]`);
-    const reply = await callModel(messages);
+    let streamed = false;
+    let hasStreamedText = false;
+    const reply = await callModel(messages, {
+      onTextDelta: (delta) => {
+        streamed = true;
+        hasStreamedText = true;
+        process.stdout.write(delta);
+      },
+      onToolCall: (call) => {
+        if (streamed) {
+          process.stdout.write("\n");
+          streamed = false;
+        }
+        console.log(`[准备调用工具] ${call.name}...`);
+      },
+    });
+
+    if (streamed) process.stdout.write("\n");
     messages.push(reply);
 
     if (!reply.toolCalls?.length) return reply.content;
-    if (reply.content) console.log(reply.content);
+    // 只有未流式输出过且存在文本时才兜底打印
+    if (!hasStreamedText && reply.content) console.log(reply.content);
 
     for (const call of reply.toolCalls) {
       console.log(`[工具] ${call.name} : ${JSON.stringify(call.arguments)}`);
