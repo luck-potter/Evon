@@ -19,13 +19,22 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
   {
     type: "function",
     name: "read_file",
-    description: "按 UTF-8 读取本地文件，返回带行号的文件内容。",
+    description:
+      "按 UTF-8 读取本地文件，返回文件内容。支持可选的 offset（从 1 开始的起始行号）与 limit（读取行数上限）分页读取。",
     parameters: {
       type: "object",
       properties: {
         path: { type: "string", description: "需要读取的文件路径" },
+        offset: {
+          anyOf: [{ type: "integer" }, { type: "null" }],
+          description: "起始行号（从 1 开始，传 null 表示默认从第 1 行开始）",
+        },
+        limit: {
+          anyOf: [{ type: "integer" }, { type: "null" }],
+          description: "读取的最大行数（传 null 表示不限制行数）",
+        },
       },
-      required: ["path"],
+      required: ["path", "offset", "limit"],
       additionalProperties: false,
     },
     strict: true,

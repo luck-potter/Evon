@@ -1,7 +1,15 @@
 // 工具调用：模型告诉我们“用哪个工具、传什么参数”。
 export type ToolCall =
   | { id: string; name: "run_bash"; arguments: { command: string } }
-  | { id: string; name: "read_file"; arguments: { path: string } }
+  | {
+      id: string;
+      name: "read_file";
+      arguments: {
+        path: string;
+        offset?: number | null;
+        limit?: number | null;
+      };
+    }
   | {
       id: string;
       name: "write_file";
