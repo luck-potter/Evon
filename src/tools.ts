@@ -38,12 +38,40 @@ export async function runBash(
   }
 }
 
-export async function readFile(path: string): Promise<string> {
-  const text = (await fsReadFile(path, "utf-8"))
-    .split("\n")
-    .map((line, index) => `${index + 1}: ${line}`)
-    .join("\n");
-  return truncateHead(text);
+export async function readFile(
+  path: string,
+  offset?: number | null,
+  limit?: number | null,
+): Promise<string> {
+  const text = await fsReadFile(path, "utf-8");
+  const lines = text.split("\n");
+
+  const parsedOffset =
+    offset !== undefined && offset !== null ? Number(offset) : 1;
+  if (
+    Number.isNaN(parsedOffset) ||
+    parsedOffset < 1 ||
+    parsedOffset > lines.length
+  ) {
+    return `文件读取失败：offset ${offset} 超出范围`;
+  }
+
+  let parsedLimit: number | undefined;
+  if (limit !== undefined && limit !== null) {
+    parsedLimit = Number(limit);
+    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+      return `文件读取失败：limit ${limit} 必须大于 0`;
+    }
+  }
+
+  const start = parsedOffset - 1;
+  const end =
+    parsedLimit !== undefined
+      ? Math.min(lines.length, start + parsedLimit)
+      : lines.length;
+
+  const content = lines.slice(start, end).join("\n");
+  return truncateHead(content);
 }
 
 export async function writeFile(
@@ -84,7 +112,7 @@ export async function executeTool(call: ToolCall): Promise<string> {
       case "run_bash":
         return await runBash(args.command);
       case "read_file":
-        return await readFile(args.path);
+        return await readFile(args.path, args.offset, args.limit);
       case "write_file":
         return await writeFile(args.path, args.content);
       case "edit_file":
