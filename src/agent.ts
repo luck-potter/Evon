@@ -3,7 +3,7 @@ import { callModel } from "./llm.ts";
 import { executeTool } from "./tools.ts";
 import type { Message } from "./types.ts";
 
-export async function runAgent(task: string, maxSteps = 10): Promise<string> {
+export async function runAgent(task: string, maxSteps = 30): Promise<string> {
   const messages: Message[] = [
     {
       role: "system",
@@ -26,7 +26,7 @@ export async function runAgent(task: string, maxSteps = 10): Promise<string> {
     if (reply.content) console.log(reply.content);
 
     for (const call of reply.toolCalls) {
-      console.log(`[工具] ${call.name}`);
+      console.log(`[工具] ${call.name} : ${JSON.stringify(call.arguments)}`);
       const result = await executeTool(call);
       messages.push({ role: "tool", toolCallId: call.id, content: result });
     }
