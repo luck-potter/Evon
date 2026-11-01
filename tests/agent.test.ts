@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgent } from "../src/agent.ts";
-import type { ModelReply, ToolCall } from "../src/types.ts";
+import type { Message, ModelReply, ToolCall } from "../src/types.ts";
 
 const { mockCallModel, mockExecuteTool } = vi.hoisted(() => ({
   mockCallModel: vi.fn(),
@@ -99,10 +99,35 @@ describe("runAgent", () => {
     } satisfies ModelReply);
     mockExecuteTool.mockResolvedValue('{"stdout":"loop\\n"}');
 
-    await expect(runAgent("陷入死循环的任务", 3)).rejects.toThrow(
+    await expect(runAgent("陷入死循环的任务", [], 3)).rejects.toThrow(
       "已达到最大步数 3，任务尚未完成。",
     );
     expect(mockCallModel).toHaveBeenCalledTimes(3);
     expect(mockExecuteTool).toHaveBeenCalledTimes(3);
+  });
+  it("连续调用时复用 messages 累积会话上下文", async () => {
+    mockCallModel
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: "第一轮回复",
+      } satisfies ModelReply)
+      .mockResolvedValueOnce({
+        role: "assistant",
+        content: "第二轮回复",
+      } satisfies ModelReply);
+
+    const messages: Message[] = [];
+    await runAgent("第1个问题", messages);
+    await runAgent("第2个问题", messages);
+
+    expect(mockCallModel).toHaveBeenCalledTimes(2);
+    const secondTurnHistory = mockCallModel.mock.calls[1][0];
+    expect(messages.map((m) => m.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
   });
 });

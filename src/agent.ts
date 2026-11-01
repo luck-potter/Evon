@@ -3,9 +3,13 @@ import { callModel } from "./llm.ts";
 import { executeTool } from "./tools.ts";
 import type { Message } from "./types.ts";
 
-export async function runAgent(task: string, maxSteps = 30): Promise<string> {
-  const messages: Message[] = [
-    {
+export async function runAgent(
+  task: string,
+  messages: Message[] = [],
+  maxSteps = 30,
+): Promise<string> {
+  if (messages.length === 0) {
+    messages.push({
       role: "system",
       content: [
         "你是一个编程助手。先阅读代码，再修改，最后运行测试验证。",
@@ -13,9 +17,9 @@ export async function runAgent(task: string, maxSteps = 30): Promise<string> {
         "使用工具完成任务，遇到报错应分析原因并尝试修复。",
         "只在实际验证后宣称成功；无法完成时说明原因。",
       ].join("\n"),
-    },
-    { role: "user", content: task },
-  ];
+    });
+  }
+  messages.push({ role: "user", content: task });
 
   for (let step = 0; step < maxSteps; step++) {
     console.log(`\n[步骤 ${step + 1}/${maxSteps}]`);
