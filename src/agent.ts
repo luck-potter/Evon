@@ -1,13 +1,19 @@
 import { platform } from "node:os";
 import { callModel } from "./llm.ts";
 import { executeTool } from "./tools.ts";
-import type { Message } from "./types.ts";
+import type { Message, ModelReply } from "./types.ts";
+
+export interface RunAgentOptions {
+  maxSteps?: number;
+  signal?: AbortSignal;
+}
 
 export async function runAgent(
   task: string,
   messages: Message[] = [],
-  maxSteps = 30,
+  options: RunAgentOptions = {},
 ): Promise<string> {
+  const { maxSteps = 30, signal } = options;
   if (messages.length === 0) {
     messages.push({
       role: "system",
@@ -22,23 +28,41 @@ export async function runAgent(
   messages.push({ role: "user", content: task });
 
   for (let step = 0; step < maxSteps; step++) {
+    // 1. 每轮 step 开始前检查是否已打断
+    if (signal?.aborted) {
+      return "操作已被用户打断。";
+    }
+
+    // 2. 调用模型：加 try-catch 捕获模型生成阶段的中断（比如 fetch 被 abort）
     console.log(`\n[步骤 ${step + 1}/${maxSteps}]`);
+    let reply: ModelReply;
     let streamed = false;
     let hasStreamedText = false;
-    const reply = await callModel(messages, {
-      onTextDelta: (delta) => {
-        streamed = true;
-        hasStreamedText = true;
-        process.stdout.write(delta);
-      },
-      onToolCall: (call) => {
-        if (streamed) {
-          process.stdout.write("\n");
-          streamed = false;
-        }
-        console.log(`[准备调用工具] ${call.name}...`);
-      },
-    });
+    try {
+      reply = await callModel(messages, {
+        onTextDelta: (delta) => {
+          streamed = true;
+          hasStreamedText = true;
+          process.stdout.write(delta);
+        },
+        onToolCall: (call) => {
+          if (streamed) {
+            process.stdout.write("\n");
+            streamed = false;
+          }
+          console.log(`[准备调用工具] ${call.name}...`);
+        },
+        signal,
+      });
+    } catch (error) {
+      // 如果是在模型思考/流式输出时按下了 Ctrl+C
+      if (signal?.aborted) {
+        if (streamed) process.stdout.write("\n");
+        messages.push({ role: "assistant", content: "操作已被用户取消。" });
+        return "操作已被用户打断。";
+      }
+      throw error;
+    }
 
     if (streamed) process.stdout.write("\n");
     messages.push(reply);
@@ -47,10 +71,26 @@ export async function runAgent(
     // 只有未流式输出过且存在文本时才兜底打印
     if (!hasStreamedText && reply.content) console.log(reply.content);
 
+    // 3. 执行工具：改用普通 for 循环，方便在被打断时拿到剩余工具的索引
     for (const call of reply.toolCalls) {
+      // 只要被打断了，后续所有工具不再执行，直接填 Cancelled by user
+      if (signal?.aborted) {
+        messages.push({
+          role: "tool",
+          toolCallId: call.id,
+          content: "Cancelled by user",
+        });
+        continue;
+      }
+
       console.log(`[工具] ${call.name} : ${JSON.stringify(call.arguments)}`);
-      const result = await executeTool(call);
+      const result = await executeTool(call, process.cwd(), signal);
       messages.push({ role: "tool", toolCallId: call.id, content: result });
+    }
+
+    // 本轮工具处理完毕（或被中断跳过），若是打断状态则直接退出
+    if (signal?.aborted) {
+      return "操作已被用户打断。";
     }
   }
 

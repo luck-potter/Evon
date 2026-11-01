@@ -67,7 +67,7 @@ describe("runAgent", () => {
 
     expect(result).toBe("项目名称是 mini-swe-agent");
     expect(mockExecuteTool).toHaveBeenCalledTimes(1);
-    expect(mockExecuteTool).toHaveBeenCalledWith(toolCall);
+    expect(mockExecuteTool).toHaveBeenCalledWith(toolCall, process.cwd(), undefined);
     expect(mockCallModel).toHaveBeenCalledTimes(2);
 
     const history = mockCallModel.mock.calls[1][0];
@@ -99,7 +99,9 @@ describe("runAgent", () => {
     } satisfies ModelReply);
     mockExecuteTool.mockResolvedValue('{"stdout":"loop\\n"}');
 
-    await expect(runAgent("陷入死循环的任务", [], 3)).rejects.toThrow(
+    await expect(
+      runAgent("陷入死循环的任务", [], { maxSteps: 3 }),
+    ).rejects.toThrow(
       "已达到最大步数 3，任务尚未完成。",
     );
     expect(mockCallModel).toHaveBeenCalledTimes(3);
@@ -129,5 +131,52 @@ describe("runAgent", () => {
       "user",
       "assistant",
     ]);
+  });
+
+  it("若在工具执行阶段被打断，未执行工具回填 Cancelled by user 并退出", async () => {
+    const controller = new AbortController();
+    const toolCall1: ToolCall = {
+      id: "call_1",
+      name: "run_bash",
+      arguments: { command: "echo 1" },
+    };
+    const toolCall2: ToolCall = {
+      id: "call_2",
+      name: "run_bash",
+      arguments: { command: "echo 2" },
+    };
+
+    mockCallModel.mockResolvedValueOnce({
+      role: "assistant",
+      content: "准备执行两个工具",
+      toolCalls: [toolCall1, toolCall2],
+    } satisfies ModelReply);
+
+    mockExecuteTool.mockImplementationOnce(async () => {
+      controller.abort();
+      return '{"stdout":"1"}';
+    });
+
+    const messages: Message[] = [];
+    const result = await runAgent("执行任务", messages, {
+      signal: controller.signal,
+    });
+
+    expect(result).toBe("操作已被用户打断。");
+    expect(mockExecuteTool).toHaveBeenCalledTimes(1);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "tool",
+          toolCallId: "call_1",
+          content: '{"stdout":"1"}',
+        }),
+        expect.objectContaining({
+          role: "tool",
+          toolCallId: "call_2",
+          content: "Cancelled by user",
+        }),
+      ]),
+    );
   });
 });

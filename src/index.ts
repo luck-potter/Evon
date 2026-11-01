@@ -2,20 +2,39 @@ import readline from "node:readline/promises";
 import { runAgent } from "./agent.ts";
 import type { Message } from "./types.ts";
 
+let currentAbortController: AbortController | null = null;
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 rl.on("close", () => process.exit(0));
+rl.on("SIGINT", () => {
+  if (currentAbortController) {
+    // 关键这一句：按一下遥控器的取消按钮
+
+    currentAbortController.abort();
+
+    currentAbortController = null;
+    console.log("\n[已打断]");
+  } else {
+    process.exit(0);
+  }
+});
 
 const messages: Message[] = [];
 
 const initialTask = process.argv.slice(2).join(" ").trim();
 if (initialTask) {
+  currentAbortController = new AbortController();
   try {
-    await runAgent(initialTask, messages);
+    await runAgent(initialTask, messages, {
+      signal: currentAbortController.signal,
+    });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    // 任务正常结束或出错，清空引用
+    currentAbortController = null;
   }
 }
 
@@ -34,9 +53,15 @@ repl: while (true) {
       continue;
   }
 
+  currentAbortController = new AbortController();
   try {
-    await runAgent(input, messages);
+    await runAgent(input, messages, {
+      signal: currentAbortController.signal,
+    });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    // 任务正常结束或出错，清空引用
+    currentAbortController = null;
   }
 }

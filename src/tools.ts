@@ -11,8 +11,12 @@ import { truncateHead, truncateTail } from "./utils/truncate.ts";
 export async function runBash(
   command: string,
   timeoutMs = 30_000,
+  signal?: AbortSignal,
 ): Promise<string> {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combinedSignal = signal
+    ? AbortSignal.any([timeoutSignal, signal])
+    : timeoutSignal;
 
   return new Promise((resolve) => {
     let stdout = "";
@@ -20,7 +24,7 @@ export async function runBash(
 
     const child = spawn(command, {
       shell: true,
-      signal: timeoutSignal,
+      signal: combinedSignal,
     });
 
     child.stdout?.on("data", (outChunk) => {
@@ -136,18 +140,29 @@ export async function editFile(
 export async function executeTool(
   call: ToolCall,
   workspaceRoot = process.cwd(),
+  signal?: AbortSignal,
 ): Promise<string> {
   try {
     const { name, arguments: args } = call;
     switch (name) {
       case "run_bash":
-        return await runBash(args.command);
+        return await runBash(args.command, 30_000, signal);
       case "read_file":
-        return await readFile(args.path, args.offset, args.limit, workspaceRoot);
+        return await readFile(
+          args.path,
+          args.offset,
+          args.limit,
+          workspaceRoot,
+        );
       case "write_file":
         return await writeFile(args.path, args.content, workspaceRoot);
       case "edit_file":
-        return await editFile(args.path, args.old_str, args.new_str, workspaceRoot);
+        return await editFile(
+          args.path,
+          args.old_str,
+          args.new_str,
+          workspaceRoot,
+        );
     }
   } catch (error) {
     return `工具执行失败：${error instanceof Error ? error.message : String(error)}`;
