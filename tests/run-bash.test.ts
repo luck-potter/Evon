@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
-import { runBash } from "../src/tools.ts";
+import { executeTool, runBash } from "../src/tools.ts";
 
 // 对当前 macOS/Linux shell 做单引号转义；Node 路径含空格也能执行。
 function shellQuote(value: string): string {
@@ -129,5 +129,58 @@ describe("runBash", () => {
     expect(parsed.exitCode).toBe(0);
     expect(parsed.timedOut).toBe(false);
     expect(parsed.stdout).toContain("已截断");
+  });
+
+  it("支持通过外部 signal 提前中断命令执行", async () => {
+    const controller = new AbortController();
+    const started = performance.now();
+
+    setTimeout(() => {
+      controller.abort();
+    }, 100);
+
+    const output = await runBash(
+      nodeCommand(`
+        process.stdout.write("stdout-before-abort");
+        setTimeout(() => {}, 5_000);
+      `),
+      10_000,
+      controller.signal,
+    );
+    const elapsed = performance.now() - started;
+
+    expect(elapsed).toBeLessThan(2_500);
+    const parsed = JSON.parse(output);
+    expect(parsed.stdout).toBe("stdout-before-abort");
+    expect(parsed.timedOut).toBe(false);
+  });
+  it("executeTool 支持透传 signal 中断 run_bash 执行", async () => {
+    const controller = new AbortController();
+    const started = performance.now();
+
+    setTimeout(() => {
+      controller.abort();
+    }, 100);
+
+    const output = await executeTool(
+      {
+        id: "call_test",
+        name: "run_bash",
+        arguments: {
+          command: nodeCommand(`
+            process.stdout.write("tool-abort-stdout");
+            setTimeout(() => {}, 5_000);
+          `),
+        },
+      },
+      process.cwd(),
+      controller.signal,
+    );
+    const elapsed = performance.now() - started;
+
+    expect(elapsed).toBeLessThan(2_500);
+    const parsed = JSON.parse(output);
+    expect(parsed.stdout).toBe("tool-abort-stdout");
+    expect(parsed.timedOut).toBe(false);
   });
 });

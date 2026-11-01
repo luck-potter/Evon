@@ -11,6 +11,7 @@ export type ToolCall = OpenAI.Responses.ResponseFunctionToolCall;
 export interface CallOptions {
   onTextDelta?: (delta: string) => void;
   onToolCall?: (call: { name: string }) => void;
+  signal?: AbortSignal;
 }
 
 const toolArgKeys: Record<string, string[]> = {
@@ -99,14 +100,24 @@ export async function callModel(
   let completedResponse: OpenAI.Responses.Response | undefined;
   let streamedText = "";
 
-  const stream = await client.responses.create({
-    model: process.env.MODEL,
-    input: toResponseInput(message),
-    tools: toolDefinitions,
-    stream: true,
-  });
+  if (options?.signal?.aborted) {
+    throw options.signal.reason ?? new Error("Request was aborted.");
+  }
+
+  const stream = await client.responses.create(
+    {
+      model: process.env.MODEL,
+      input: toResponseInput(message),
+      tools: toolDefinitions,
+      stream: true,
+    },
+    ...(options?.signal ? [{ signal: options.signal }] : []),
+  );
 
   for await (const event of stream) {
+    if (options?.signal?.aborted) {
+      throw options.signal.reason ?? new Error("Request was aborted.");
+    }
     if (event.type === "response.output_text.delta") {
       streamedText += event.delta;
       options?.onTextDelta?.(event.delta);

@@ -224,4 +224,25 @@ describe("callModel", () => {
     );
     await expect(callModel([])).rejects.toThrow("模型回复失败：网络连接中断");
   });
+
+  it("透传 signal 给 OpenAI SDK", async () => {
+    createResponse.mockResolvedValue(response([], "ok"));
+    const controller = new AbortController();
+
+    await callModel([], { signal: controller.signal });
+
+    expect(createResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      { signal: controller.signal },
+    );
+  });
+
+  it("当 signal 已打断或在流式接收过程中被打断时抛出错误", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("用户打断"));
+
+    await expect(callModel([], { signal: controller.signal })).rejects.toThrow(
+      "用户打断",
+    );
+  });
 });
