@@ -102,4 +102,20 @@ describe("runBash", () => {
       timedOut: true,
     });
   });
+
+  it("输出行数过多时，保留尾部输出并截断头部", async () => {
+    const output = await runBash(
+      nodeCommand(`
+        for (let i = 1; i <= 2005; i++) {
+          process.stdout.write("line-" + i + "\\n");
+        }
+      `),
+    );
+
+    const parsed = JSON.parse(output);
+    expect(parsed.exitCode).toBe(0);
+    expect(parsed.stdout).toContain("[... 前面 5 行已截断 ...]");
+    expect(parsed.stdout).toContain("line-2005");
+    expect(parsed.stdout).not.toContain("line-1\\n");
+  });
 });

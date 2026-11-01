@@ -86,4 +86,16 @@ describe("readFile", () => {
     expect(result).toMatch(/^工具执行失败：/);
     expect(result).toContain(filePath);
   });
+
+  it("文件行数超出限制时输出被截断", async () => {
+    const lines = Array.from({ length: 2005 }, (_, i) => `内容 ${i + 1}`);
+    const filePath = join(testDir, "large-file.txt");
+    await writeFile(filePath, lines.join("\n"), "utf8");
+
+    const result = await readFile(filePath);
+    expect(result).toContain("1: 内容 1");
+    expect(result).toContain("2000: 内容 2000");
+    expect(result).not.toContain("2001: 内容 2001");
+    expect(result).toContain("[... 已截断余下 5 行 ...]");
+  });
 });
