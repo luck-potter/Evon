@@ -11,7 +11,7 @@
 ## 阶段一：防御与稳定性（Agent 活命底线）
 > 目标：消除大输出撑爆 Token、命令卡死与文件越界，保证 Agent 稳定存活。
 
-- [ ] **输出截断（Output Truncation）**
+- [x] **输出截断（Output Truncation）**
   - 为 `run_bash` 和 `read_file` 增加行数与字符数上限（如 1000 行 / 30KB）。
   - 超出限制时保留首尾内容，并在中间插入 `[... truncated N lines ...]` 提示。
 - [ ] **升级 Bash 执行器**
