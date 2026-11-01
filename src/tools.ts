@@ -1,6 +1,5 @@
 import type { ToolCall } from "./types.ts";
-import { exec, type ExecException } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import {
   readFile as fsReadFile,
   writeFile as fsWriteFile,
@@ -8,34 +7,56 @@ import {
 
 import { truncateHead, truncateTail } from "./utils/truncate.ts";
 
-const execCommand = promisify(exec);
-
 export async function runBash(
   command: string,
   timeoutMs = 30_000,
 ): Promise<string> {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
-  try {
-    const { stdout, stderr } = await execCommand(command, {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+
+    const child = spawn(command, {
+      shell: true,
       signal: timeoutSignal,
     });
-    return JSON.stringify({
-      stdout: truncateTail(stdout),
-      stderr: truncateTail(stderr),
-      exitCode: 0,
-      timedOut: false,
-    });
-  } catch (error) {
-    const err = error as ExecException;
 
-    return JSON.stringify({
-      stdout: truncateTail(err.stdout ?? ""),
-      stderr: truncateTail(err.stderr ?? ""),
-      exitCode: typeof err.code === "number" ? err.code : null,
-      timedOut: timeoutSignal.aborted,
+    child.stdout?.on("data", (outChunk) => {
+      stdout += outChunk.toString("utf-8");
     });
-  }
+
+    child.stderr?.on("data", (errChunk) => {
+      stderr += errChunk.toString("utf-8");
+    });
+
+    child.on("close", (code) => {
+      resolve(
+        JSON.stringify({
+          stdout: truncateTail(stdout),
+          stderr: truncateTail(stderr),
+          exitCode: code,
+          timedOut: timeoutSignal.aborted,
+        }),
+      );
+    });
+
+    child.on("error", (error) => {
+      // 超时引发的 AbortError 属于正常中断流程，等待接下来的 close 事件统一 flush 和 resolve
+      if (error.name === "AbortError") {
+        return;
+      }
+
+      resolve(
+        JSON.stringify({
+          stdout: truncateTail(stdout),
+          stderr: truncateTail(stderr || error.message),
+          exitCode: null,
+          timedOut: timeoutSignal.aborted,
+        }),
+      );
+    });
+  });
 }
 
 export async function readFile(

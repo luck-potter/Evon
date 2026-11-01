@@ -118,4 +118,16 @@ describe("runBash", () => {
     expect(parsed.stdout).toContain("line-2005");
     expect(parsed.stdout).not.toContain("line-1\\n");
   });
+
+  it("输出超过 1MB 时不会因 maxBuffer 崩溃，并正确截断", async () => {
+    // 产生 2MB 输出，原 exec 会直接抛 ERR_CHILD_PROCESS_STDIO_MAXBUFFER 崩溃
+    const output = await runBash(
+      nodeCommand("process.stdout.write('a'.repeat(2 * 1024 * 1024))"),
+    );
+
+    const parsed = JSON.parse(output);
+    expect(parsed.exitCode).toBe(0);
+    expect(parsed.timedOut).toBe(false);
+    expect(parsed.stdout).toContain("已截断");
+  });
 });
