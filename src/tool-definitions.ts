@@ -5,7 +5,7 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
     type: "function",
     name: "run_bash",
     description:
-      "执行本地 shell 命令，超时为 5 秒。返回包含 stdout、stderr、exitCode 和 timedOut 的 JSON 字符串。",
+      "执行本地 shell 命令，超时为 30 秒。返回包含 stdout、stderr、exitCode 和 timedOut 的 JSON 字符串。",
     parameters: {
       type: "object",
       properties: {
