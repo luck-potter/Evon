@@ -20,7 +20,7 @@
       "skipFiles": ["<node_internals>/**"],
       "program": "${workspaceFolder}/src/index.ts",
       "runtimeArgs": ["--env-file=${workspaceFolder}/.env"],
-      "args": ["你好"],
+      "args": ["帮我看下当前项目"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
     }
