@@ -8,8 +8,11 @@ import {
 
 const execCommand = promisify(exec);
 
-export async function runBash(command: string): Promise<string> {
-  const timeoutSignal = AbortSignal.timeout(30_000);
+export async function runBash(
+  command: string,
+  timeoutMs = 30_000,
+): Promise<string> {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
   try {
     const { stdout, stderr } = await execCommand(command, {

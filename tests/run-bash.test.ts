@@ -80,18 +80,21 @@ describe("runBash", () => {
     expect(JSON.parse(output)).toEqual({ stdout, stderr, exitCode, timedOut: false });
   });
 
-  it("约 5 秒后超时返回，明确标记超时并保留此前的输出", async () => {
-    // 正常完成需要 15 秒，应被 runBash 的 5 秒限制提前终止。
+  it("超时后返回，明确标记超时并保留此前的输出", async () => {
+    // 正常完成需要 3 秒，应被 500 毫秒限制提前终止。
     const started = performance.now();
-    const output = await runBash(nodeCommand(`
-      process.stdout.write("stdout-before-timeout");
-      process.stderr.write("stderr-before-timeout");
-      setTimeout(() => {}, 15_000);
-    `));
+    const output = await runBash(
+      nodeCommand(`
+        process.stdout.write("stdout-before-timeout");
+        process.stderr.write("stderr-before-timeout");
+        setTimeout(() => {}, 3_000);
+      `),
+      500,
+    );
     const elapsed = performance.now() - started;
 
-    expect(elapsed, "不应过早结束").toBeGreaterThanOrEqual(4_500);
-    expect(elapsed, "应在超时后及时返回").toBeLessThan(10_000);
+    expect(elapsed, "不应过早结束").toBeGreaterThanOrEqual(400);
+    expect(elapsed, "应在超时后及时返回").toBeLessThan(2_500);
     expect(JSON.parse(output)).toEqual({
       stdout: "stdout-before-timeout",
       stderr: "stderr-before-timeout",
