@@ -1,5 +1,4 @@
 import { mkdtemp, readFile as fsReadFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { editFile, executeTool } from "../src/tools.ts";
@@ -9,7 +8,7 @@ describe("editFile", () => {
   let filePath: string;
 
   beforeEach(async () => {
-    testDir = await mkdtemp(join(tmpdir(), "mini-swe-agent-edit-file-"));
+    testDir = await mkdtemp(join(process.cwd(), ".tmp-test-edit-file-"));
     filePath = join(testDir, "示例 file.txt");
   });
 

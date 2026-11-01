@@ -4,6 +4,7 @@ import {
   readFile as fsReadFile,
   writeFile as fsWriteFile,
 } from "node:fs/promises";
+import { resolveSafePath } from "./utils/path.ts";
 
 import { truncateHead, truncateTail } from "./utils/truncate.ts";
 
@@ -63,8 +64,10 @@ export async function readFile(
   path: string,
   offset?: number | null,
   limit?: number | null,
+  workspaceRoot = process.cwd(),
 ): Promise<string> {
-  const text = await fsReadFile(path, "utf-8");
+  const safePath = resolveSafePath(path, workspaceRoot);
+  const text = await fsReadFile(safePath, "utf-8");
   const lines = text.split("\n");
 
   const parsedOffset =
@@ -98,8 +101,10 @@ export async function readFile(
 export async function writeFile(
   path: string,
   content: string,
+  workspaceRoot = process.cwd(),
 ): Promise<string> {
-  await fsWriteFile(path, content, "utf-8");
+  const safePath = resolveSafePath(path, workspaceRoot);
+  await fsWriteFile(safePath, content, "utf-8");
   return `文件写入成功：${path}`;
 }
 
@@ -107,10 +112,12 @@ export async function editFile(
   path: string,
   oldStr: string,
   newStr: string,
+  workspaceRoot = process.cwd(),
 ): Promise<string> {
+  const safePath = resolveSafePath(path, workspaceRoot);
   if (!oldStr) return "文件未修改：old_str 为空";
 
-  const content = await fsReadFile(path, "utf-8");
+  const content = await fsReadFile(safePath, "utf-8");
   const firstIndex = content.indexOf(oldStr);
   if (firstIndex === -1) return "文件未修改：未找到 old_str";
   if (firstIndex !== content.lastIndexOf(oldStr)) {
@@ -118,7 +125,7 @@ export async function editFile(
   }
 
   await fsWriteFile(
-    path,
+    safePath,
     content.replace(oldStr, () => newStr),
     "utf-8",
   );
@@ -126,18 +133,21 @@ export async function editFile(
 }
 
 // 工具失败也返回给模型，让主循环有机会根据错误继续处理。
-export async function executeTool(call: ToolCall): Promise<string> {
+export async function executeTool(
+  call: ToolCall,
+  workspaceRoot = process.cwd(),
+): Promise<string> {
   try {
     const { name, arguments: args } = call;
     switch (name) {
       case "run_bash":
         return await runBash(args.command);
       case "read_file":
-        return await readFile(args.path, args.offset, args.limit);
+        return await readFile(args.path, args.offset, args.limit, workspaceRoot);
       case "write_file":
-        return await writeFile(args.path, args.content);
+        return await writeFile(args.path, args.content, workspaceRoot);
       case "edit_file":
-        return await editFile(args.path, args.old_str, args.new_str);
+        return await editFile(args.path, args.old_str, args.new_str, workspaceRoot);
     }
   } catch (error) {
     return `工具执行失败：${error instanceof Error ? error.message : String(error)}`;

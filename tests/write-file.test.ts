@@ -4,7 +4,6 @@ import {
   rm,
   writeFile as fsWriteFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executeTool, writeFile } from "../src/tools.ts";
@@ -14,7 +13,7 @@ describe("writeFile", () => {
   let filePath: string;
 
   beforeEach(async () => {
-    testDir = await mkdtemp(join(tmpdir(), "mini-swe-agent-write-file-"));
+    testDir = await mkdtemp(join(process.cwd(), ".tmp-test-write-file-"));
     filePath = join(testDir, "示例 file.txt");
   });
 
