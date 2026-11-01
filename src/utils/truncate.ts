@@ -10,6 +10,26 @@ function splitLines(content: string): string[] {
   return lines;
 }
 
+// 在 UTF-8 字符边界截断字节，防止切断多字节字符（如中文或 Emoji）
+function truncateStringToBytes(
+  str: string,
+  maxBytes: number,
+  fromEnd = false,
+): string {
+  const buf = Buffer.from(str, "utf-8");
+  if (buf.length <= maxBytes) return str;
+
+  if (fromEnd) {
+    let start = buf.length - maxBytes;
+    while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++;
+    return buf.subarray(start).toString("utf-8");
+  }
+
+  let end = maxBytes;
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end--;
+  return buf.subarray(0, end).toString("utf-8");
+}
+
 // 供 read_file 使用：保留前 N 行
 export function truncateHead(
   content: string,
@@ -29,13 +49,19 @@ export function truncateHead(
 
   for (let i = 0; i < lines.length && i < maxLines; i++) {
     const lineBytes = Buffer.byteLength(lines[i], "utf-8") + (i > 0 ? 1 : 0);
-    if (bytes + lineBytes > maxBytes) break;
+    if (bytes + lineBytes > maxBytes) {
+      if (output.length === 0) {
+        output.push(truncateStringToBytes(lines[i], maxBytes, false));
+      }
+      break;
+    }
     output.push(lines[i]);
     bytes += lineBytes;
   }
 
   const dropped = lines.length - output.length;
-  return `${output.join("\n")}\n\n[... 已截断余下 ${dropped} 行 ...]\n`;
+  const note = dropped > 0 ? `余下 ${dropped} 行` : "余下内容";
+  return `${output.join("\n")}\n\n[... 已截断${note} ...]\n`;
 }
 
 // 供 run_bash 使用：保留后 N 行
@@ -58,11 +84,17 @@ export function truncateTail(
   for (let i = lines.length - 1; i >= 0 && output.length < maxLines; i--) {
     const lineBytes =
       Buffer.byteLength(lines[i], "utf-8") + (output.length > 0 ? 1 : 0);
-    if (bytes + lineBytes > maxBytes) break;
+    if (bytes + lineBytes > maxBytes) {
+      if (output.length === 0) {
+        output.unshift(truncateStringToBytes(lines[i], maxBytes, true));
+      }
+      break;
+    }
     output.unshift(lines[i]);
     bytes += lineBytes;
   }
 
   const dropped = lines.length - output.length;
-  return `\n[... 前面 ${dropped} 行已截断 ...]\n\n${output.join("\n")}`;
+  const note = dropped > 0 ? `前面 ${dropped} 行` : "前面部分内容";
+  return `\n[... ${note}已截断 ...]\n\n${output.join("\n")}`;
 }

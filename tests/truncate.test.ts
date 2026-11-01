@@ -39,6 +39,13 @@ describe("truncateHead", () => {
     expect(result).toBe("你好\n世界\n\n[... 已截断余下 1 行 ...]\n");
   });
 
+  it("单行超过 maxBytes 时截断该行头部内容并保留 UTF-8 边界", () => {
+    const content = "你好世界，这是一段很长的单行文本";
+    // "你好世界" = 12 字节，限制 13 字节时应保留 "你好世界"，不能切碎后续的逗号或汉字
+    const result = truncateHead(content, 100, 13);
+    expect(result).toBe("你好世界\n\n[... 已截断余下内容 ...]\n");
+  });
+
   it("空字符串直接返回", () => {
     expect(truncateHead("")).toBe("");
   });
@@ -74,6 +81,13 @@ describe("truncateTail", () => {
     // 限制 20 字节：后两行 9+1+9 = 19 字节
     const result = truncateTail(content, 100, 20);
     expect(result).toBe("\n[... 前面 1 行已截断 ...]\n\n第二行\n第三行");
+  });
+
+  it("单行超过 maxBytes 时截断该行尾部内容并保留 UTF-8 边界", () => {
+    const content = "这是一段很长的单行文本，你好世界";
+    // "你好世界" = 12 字节，限制 13 字节时应保留 "你好世界"
+    const result = truncateTail(content, 100, 13);
+    expect(result).toBe("\n[... 前面部分内容已截断 ...]\n\n你好世界");
   });
 
   it("空字符串直接返回", () => {
