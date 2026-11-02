@@ -17,6 +17,7 @@ export interface CallOptions {
 const toolArgKeys: Record<string, string[]> = {
   run_bash: ["command"],
   ls: ["path"],
+  grep: ["pattern"],
   read_file: ["path"],
   write_file: ["path", "content"],
   edit_file: ["path", "old_str", "new_str"],

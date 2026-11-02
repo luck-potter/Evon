@@ -104,6 +104,7 @@ describe("callModel", () => {
     const calls = [
       { name: "run_bash", args: { command: "printf '你好\n'" } },
       { name: "ls", args: { path: "目录", limit: 3 } },
+      { name: "grep", args: { pattern: "runAgent", path: "src", glob: "*.ts", literal: true, ignoreCase: false, limit: 10 } },
       { name: "read_file", args: { path: "目录/文件.txt" } },
       { name: "write_file", args: { path: "empty.txt", content: "" } },
       { name: "edit_file", args: { path: "a.ts", old_str: "旧\n$&", new_str: "" } },

@@ -1,3 +1,12 @@
+export interface GrepArguments {
+  pattern: string;
+  path?: string | null;
+  glob?: string | null;
+  literal?: boolean | null;
+  ignoreCase?: boolean | null;
+  limit?: number | null;
+}
+
 // 工具调用：模型告诉我们“用哪个工具、传什么参数”。
 export type ToolCall =
   | { id: string; name: "run_bash"; arguments: { command: string } }
@@ -6,6 +15,7 @@ export type ToolCall =
       name: "ls";
       arguments: { path: string; limit?: number | null };
     }
+  | { id: string; name: "grep"; arguments: GrepArguments }
   | {
       id: string;
       name: "read_file";

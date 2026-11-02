@@ -1,5 +1,17 @@
 export const DEFAULT_MAX_LINES = 2000;
 export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
+export const GREP_MAX_LINE_LENGTH = 500;
+
+// 只截断匹配正文，由调用方保留路径和行号。
+export function truncateLine(
+  line: string,
+  maxChars = GREP_MAX_LINE_LENGTH,
+): { text: string; wasTruncated: boolean } {
+  if (line.length <= maxChars) return { text: line, wasTruncated: false };
+  // 不在 UTF-16 代理对中间切断 Emoji 等字符。
+  const preview = line.slice(0, maxChars).replace(/[\uD800-\uDBFF]$/, "");
+  return { text: `${preview}... [已截断]`, wasTruncated: true };
+}
 
 function splitLines(content: string): string[] {
   if (!content) return [];

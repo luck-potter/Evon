@@ -3,8 +3,23 @@ import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   truncateHead,
+  truncateLine,
   truncateTail,
 } from "../src/utils/truncate.ts";
+
+describe("truncateLine", () => {
+  it("500 字符以内原样返回，超出后附加提示", () => {
+    const line = "x".repeat(500);
+    expect(truncateLine(line)).toEqual({ text: line, wasTruncated: false });
+    expect(truncateLine(`${line}more`)).toEqual({ text: `${line}... [已截断]`, wasTruncated: true });
+  });
+
+  it("不会把 Emoji 的代理对切成半个字符", () => {
+    const result = truncateLine(`${"x".repeat(499)}😀more`);
+    expect(result.text).toBe(`${"x".repeat(499)}... [已截断]`);
+    expect(Buffer.from(result.text, "utf8").toString("utf8")).toBe(result.text);
+  });
+});
 
 describe("truncateHead", () => {
   it("未超过限制时原样返回", () => {

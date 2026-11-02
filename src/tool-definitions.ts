@@ -40,6 +40,41 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
   },
   {
     type: "function",
+    name: "grep",
+    description:
+      "在文件或目录中搜索代码行，返回工作区相对路径:行号:内容。默认按正则匹配、区分大小写，并遵循 .gitignore；可按 glob 过滤文件。默认最多 100 条匹配，达到上限后停止搜索；单行正文最多预览 500 字符，整体正文最多保留头部 50KiB，截断时附加提示。无匹配时返回 (无匹配)。",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "搜索的正则表达式或普通文本" },
+        path: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          description: "搜索的文件或目录路径，传 null 时搜索整个工作区",
+        },
+        glob: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          description: "文件 glob 过滤规则，例如 *.ts；传 null 时不过滤",
+        },
+        literal: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+          description: "为 true 时按普通文本搜索，传 null 时按正则匹配",
+        },
+        ignoreCase: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+          description: "为 true 时忽略大小写，传 null 时区分大小写",
+        },
+        limit: {
+          anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
+          description: "所有文件合计的匹配行数上限，达到后停止搜索，传 null 时默认 100 条；整体输出仍受 50KiB 限制",
+        },
+      },
+      required: ["pattern", "path", "glob", "literal", "ignoreCase", "limit"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
     name: "read_file",
     description:
       "按 UTF-8 读取本地文件，返回文件内容。支持可选的 offset（从 1 开始的起始行号）与 limit（读取行数上限）分页读取。",
