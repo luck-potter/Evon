@@ -18,6 +18,28 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
   },
   {
     type: "function",
+    name: "ls",
+    description:
+      "列出目录的直接子项，包含隐藏文件，按名称排序，每行一项，目录名后加 /。支持数量限制，超出时提示剩余数量。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "需要浏览的目录路径，使用 . 表示工作区根目录",
+        },
+        limit: {
+          anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
+          description: "最多展示的子项数量，传 null 时默认展示前 100 项",
+        },
+      },
+      required: ["path", "limit"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
     name: "read_file",
     description:
       "按 UTF-8 读取本地文件，返回文件内容。支持可选的 offset（从 1 开始的起始行号）与 limit（读取行数上限）分页读取。",

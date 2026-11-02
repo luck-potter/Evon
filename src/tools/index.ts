@@ -1,10 +1,11 @@
 import type { ToolCall } from "../types.ts";
 import { editFile } from "./edit-file.ts";
+import { ls } from "./ls.ts";
 import { readFile } from "./read-file.ts";
 import { runBash } from "./run-bash.ts";
 import { writeFile } from "./write-file.ts";
 
-export { editFile, readFile, runBash, writeFile };
+export { editFile, ls, readFile, runBash, writeFile };
 
 // 工具失败也返回给模型，让主循环有机会根据错误继续处理。
 export async function executeTool(
@@ -17,6 +18,8 @@ export async function executeTool(
     switch (name) {
       case "run_bash":
         return await runBash(args.command, 30_000, signal);
+      case "ls":
+        return await ls(args.path, args.limit, workspaceRoot);
       case "read_file":
         return await readFile(
           args.path,

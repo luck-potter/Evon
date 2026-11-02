@@ -3,6 +3,11 @@ export type ToolCall =
   | { id: string; name: "run_bash"; arguments: { command: string } }
   | {
       id: string;
+      name: "ls";
+      arguments: { path: string; limit?: number | null };
+    }
+  | {
+      id: string;
       name: "read_file";
       arguments: {
         path: string;

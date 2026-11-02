@@ -100,9 +100,10 @@ describe("callModel", () => {
     }));
   });
 
-  it("解析四种工具，使用 call_id 并保留空字符串及特殊字符", async () => {
+  it("解析已注册工具，使用 call_id 并保留参数值", async () => {
     const calls = [
       { name: "run_bash", args: { command: "printf '你好\n'" } },
+      { name: "ls", args: { path: "目录", limit: 3 } },
       { name: "read_file", args: { path: "目录/文件.txt" } },
       { name: "write_file", args: { path: "empty.txt", content: "" } },
       { name: "edit_file", args: { path: "a.ts", old_str: "旧\n$&", new_str: "" } },
