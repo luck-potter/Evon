@@ -1,7 +1,7 @@
 import readline from "node:readline/promises";
 import { runAgent } from "./agent.ts";
 import type { Message, TokenUsage } from "./types.ts";
-import { createSessionUsage } from "./usage.ts";
+import { createSessionUsage, recordUsage, formatUsage } from "./usage.ts";
 
 let currentAbortController: AbortController | null = null;
 const rl = readline.createInterface({
@@ -26,8 +26,8 @@ const messages: Message[] = [];
 let sessionUsage = createSessionUsage();
 
 function onUsage(usage: TokenUsage | null): void {
-  // TODO 4：调用 recordUsage 和 formatUsage，更新 sessionUsage 并展示。
-  // TODO：展示前处理流式文本的换行，避免统计粘在回复末尾。
+  recordUsage(sessionUsage, usage);
+  console.log(formatUsage(usage, sessionUsage));
 }
 
 const initialTask = process.argv.slice(2).join(" ").trim();
@@ -57,7 +57,7 @@ repl: while (true) {
       break repl;
     case "/clear":
       messages.length = 0;
-      // TODO 5：清空对话时，同时重置 sessionUsage。
+      sessionUsage = createSessionUsage();
       console.log("会话已清空");
       continue;
   }

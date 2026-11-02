@@ -54,7 +54,13 @@ export async function runAgent(
           }
           console.log(`[准备调用工具] ${call.name}...`);
         },
-        onUsage,
+        onUsage: (usage) => {
+          if (streamed) {
+            process.stdout.write("\n");
+            streamed = false; // 消费掉换行，避免 callModel 结束后多出一个空行
+          }
+          onUsage?.(usage);
+        },
         signal,
       });
     } catch (error) {

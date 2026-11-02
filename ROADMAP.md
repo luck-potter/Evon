@@ -59,7 +59,7 @@
 ## 阶段四：上下文与会话持久化（Context & Memory）
 > 目标：支持长任务工作流，解决会话丢失与 Token 窗口溢出。
 
-- [ ] **Token 统计与预算监控**
+- [x] **Token 统计与预算监控**
   - 追踪每轮调用的 Prompt Token 与 Completion Token，终端显示消耗明细。
 - [ ] **自动上下文压缩（Compaction）**
   - 当上下文接近模型窗口阈值（如 70%）时，保留 system prompt 和最近几轮，触发轻量模型对早期步骤进行摘要压缩。

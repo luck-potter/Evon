@@ -26,6 +26,7 @@ function response(
     status?: string;
     error?: { message: string } | null;
     incomplete_details?: { reason: string } | null;
+    usage?: { input_tokens: number; output_tokens: number; total_tokens: number } | null;
   },
 ) {
   return (async function* () {
@@ -68,6 +69,7 @@ function response(
         incomplete_details: null,
         output,
         output_text: text,
+        ...(extras?.usage !== undefined ? { usage: extras.usage } : {}),
       },
     };
   })();
@@ -226,6 +228,32 @@ describe("callModel", () => {
 
     expect(onTextDelta).toHaveBeenCalledWith("思考中...");
     expect(onToolCall).toHaveBeenCalledWith({ name: "read_file" });
+  });
+
+  it("当返回 usage 时触发 onUsage 并转换字段", async () => {
+    const onUsage = vi.fn();
+    createResponse.mockResolvedValue(
+      response([], "ok", {
+        usage: { input_tokens: 12, output_tokens: 5, total_tokens: 17 },
+      }),
+    );
+
+    await callModel([], { onUsage });
+
+    expect(onUsage).toHaveBeenCalledWith({
+      inputTokens: 12,
+      outputTokens: 5,
+      totalTokens: 17,
+    });
+  });
+
+  it("当未返回 usage 时触发 onUsage(null)", async () => {
+    const onUsage = vi.fn();
+    createResponse.mockResolvedValue(response([], "ok"));
+
+    await callModel([], { onUsage });
+
+    expect(onUsage).toHaveBeenCalledWith(null);
   });
 
   it("当 stream 抛出 error 事件时抛出错误", async () => {

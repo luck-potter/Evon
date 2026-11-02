@@ -132,8 +132,16 @@ export async function callModel(
       }
     } else if (event.type === "response.completed") {
       completedResponse = event.response;
-      // TODO 1：将 response.usage 转换为 TokenUsage，通过 onUsage 上报。
-      // TODO：约定缺失用量、请求失败或取消时的上报方式，避免重复上报。
+      const usage = event.response.usage;
+      if (usage) {
+        options?.onUsage?.({
+          inputTokens: usage.input_tokens ?? 0,
+          outputTokens: usage.output_tokens ?? 0,
+          totalTokens: usage.total_tokens ?? 0,
+        });
+      } else {
+        options?.onUsage?.(null);
+      }
     } else if (event.type === "response.failed") {
       throw new Error(
         `模型回复失败：${event.response.error?.message ?? "未知错误"}`,
