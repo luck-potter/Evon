@@ -1,12 +1,13 @@
 import { platform } from "node:os";
 import { callModel } from "./llm.ts";
 import { executeTool } from "./tools/index.ts";
-import type { Message, ModelReply } from "./types.ts";
+import type { Message, ModelReply, TokenUsage } from "./types.ts";
 import { formatDiff } from "./utils/format-diff.ts";
 
 export interface RunAgentOptions {
   maxSteps?: number;
   signal?: AbortSignal;
+  onUsage?: (usage: TokenUsage | null) => void;
 }
 
 export async function runAgent(
@@ -14,7 +15,7 @@ export async function runAgent(
   messages: Message[] = [],
   options: RunAgentOptions = {},
 ): Promise<string> {
-  const { maxSteps = 30, signal } = options;
+  const { maxSteps = 30, signal, onUsage } = options;
   if (messages.length === 0) {
     messages.push({
       role: "system",
@@ -53,6 +54,7 @@ export async function runAgent(
           }
           console.log(`[准备调用工具] ${call.name}...`);
         },
+        onUsage,
         signal,
       });
     } catch (error) {
