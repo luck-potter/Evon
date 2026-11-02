@@ -40,6 +40,32 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
   },
   {
     type: "function",
+    name: "find_files",
+    description:
+      "按 glob 递归查找文件，返回按路径排序的工作区相对路径，每行一个文件。遵循忽略规则，默认最多 100 个文件，无匹配返回 (无匹配)。当前为待实现骨架，调用会返回尚未实现提示。",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "文件 glob，例如 *.ts、**/*.test.ts；无 / 时匹配任意层级文件名，有 / 时相对于搜索目录",
+        },
+        path: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+          description: "搜索目录，传 null 时搜索整个工作区",
+        },
+        limit: {
+          anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
+          description: "最多返回的文件数量，传 null 时默认 100",
+        },
+      },
+      required: ["pattern", "path", "limit"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
     name: "grep",
     description:
       "在文件或目录中搜索代码行，返回工作区相对路径:行号:内容。默认按正则匹配、区分大小写，并遵循 .gitignore；可按 glob 过滤文件。默认最多 100 条匹配，达到上限后停止搜索；单行正文最多预览 500 字符，整体正文最多保留头部 50KiB，截断时附加提示。无匹配时返回 (无匹配)。",

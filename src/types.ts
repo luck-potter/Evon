@@ -7,6 +7,12 @@ export interface GrepArguments {
   limit?: number | null;
 }
 
+export interface FindFilesArguments {
+  pattern: string;
+  path?: string | null;
+  limit?: number | null;
+}
+
 // 工具调用：模型告诉我们“用哪个工具、传什么参数”。
 export type ToolCall =
   | { id: string; name: "run_bash"; arguments: { command: string } }
@@ -16,6 +22,7 @@ export type ToolCall =
       arguments: { path: string; limit?: number | null };
     }
   | { id: string; name: "grep"; arguments: GrepArguments }
+  | { id: string; name: "find_files"; arguments: FindFilesArguments }
   | {
       id: string;
       name: "read_file";
