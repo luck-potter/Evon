@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
-import { executeTool, runBash } from "../src/tools.ts";
+import { executeTool, runBash } from "../src/tools/index.ts";
 
 // 对当前 macOS/Linux shell 做单引号转义；Node 路径含空格也能执行。
 function shellQuote(value: string): string {

@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { executeTool, readFile } from "../src/tools.ts";
+import { executeTool, readFile } from "../src/tools/index.ts";
 
 describe("readFile", () => {
   let testDir: string;

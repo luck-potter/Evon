@@ -11,7 +11,7 @@ vi.mock("../src/llm.ts", () => ({
   callModel: mockCallModel,
 }));
 
-vi.mock("../src/tools.ts", () => ({
+vi.mock("../src/tools/index.ts", () => ({
   executeTool: mockExecuteTool,
 }));
 

@@ -1,6 +1,6 @@
 import { platform } from "node:os";
 import { callModel } from "./llm.ts";
-import { executeTool } from "./tools.ts";
+import { executeTool } from "./tools/index.ts";
 import type { Message, ModelReply } from "./types.ts";
 
 export interface RunAgentOptions {

@@ -21,7 +21,12 @@ src/
 ├── index.ts   # CLI 入口：接收任务
 ├── agent.ts   # 主循环：模型 → 工具 → 结果回填 → 模型
 ├── llm.ts     # 模型接口：下一阶段接入真实 API
-├── tools.ts   # 四个原子工具和统一分发
+├── tools/     # 每个原子工具单独存放
+│   ├── index.ts       # 统一导出和工具分发
+│   ├── run-bash.ts   # 执行 shell 命令
+│   ├── read-file.ts  # 读取文件
+│   ├── write-file.ts # 写入文件
+│   └── edit-file.ts  # 局部修改文件
 └── types.ts   # 对话消息、工具调用的类型
 ```
 

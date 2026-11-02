@@ -1,14 +1,14 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { editFile, executeTool, readFile, writeFile } from "../src/tools.ts";
+import { editFile, executeTool, readFile, writeFile } from "../src/tools/index.ts";
 import { resolveSafePath } from "../src/utils/path.ts";
 
 describe("工作区路径安全围栏", () => {
   const workspaceRoot = process.cwd();
 
-  it("测试正常相对路径：src/tools.ts -> 允许", () => {
-    const safePath = resolveSafePath("src/tools.ts", workspaceRoot);
-    expect(safePath).toBe(join(workspaceRoot, "src/tools.ts"));
+  it("测试正常相对路径：src/tools/index.ts -> 允许", () => {
+    const safePath = resolveSafePath("src/tools/index.ts", workspaceRoot);
+    expect(safePath).toBe(join(workspaceRoot, "src/tools/index.ts"));
   });
 
   it("测试正常工作区内绝对路径：${workspaceRoot}/foo.txt -> 允许", () => {
