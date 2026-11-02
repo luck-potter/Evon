@@ -1,5 +1,6 @@
 import { mkdtemp, readFile as fsReadFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { applyPatch } from "diff";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { editFile, executeTool } from "../src/tools/index.ts";
 
@@ -71,7 +72,9 @@ describe("editFile", () => {
 
     const result = await editFile(filePath, oldStr, newStr);
 
-    expect(result).toBe("文件修改成功：" + filePath);
+    const prefix = `文件修改成功：${filePath}\n\n`;
+    expect(result.startsWith(prefix)).toBe(true);
+    expect(applyPatch(content, result.slice(prefix.length))).toBe(expected);
     await expect(fsReadFile(filePath, "utf8")).resolves.toBe(expected);
   });
 
@@ -127,6 +130,131 @@ describe("editFile", () => {
     await expect(fsReadFile(filePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each([
+    {
+      name: "用 LF 原文匹配 CRLF 文件，保留范围外的换行",
+      content: "before\r\nold\r\nvalue\r\nafter\r\n",
+      oldStr: "old\nvalue",
+      newStr: "new\r\nnext",
+      expected: "before\r\nnew\r\nnext\r\nafter\r\n",
+    },
+    {
+      name: "用 CRLF 原文匹配 LF 文件",
+      content: "before\nold\nvalue\nafter\n",
+      oldStr: "old\r\nvalue",
+      newStr: "new\nnext",
+      expected: "before\nnew\nnext\nafter\n",
+    },
+    {
+      name: "容忍文件中的行尾空格和 Tab，保留范围外的空白",
+      content: "before  \n  old\t \n  value  \nafter\t\n",
+      oldStr: "  old\n  value",
+      newStr: "  new\n  next",
+      expected: "before  \n  new\n  next  \nafter\t\n",
+    },
+    {
+      name: "容忍 old_str 中的行尾空白",
+      content: "before\nold\nvalue\nafter\n",
+      oldStr: "old \t\nvalue  ",
+      newStr: "new\nnext",
+      expected: "before\nnew\nnext\nafter\n",
+    },
+    {
+      name: "精确匹配优先于其他容错候选",
+      content: "old\nvalue\nold \nvalue\n",
+      oldStr: "old\nvalue",
+      newStr: "new\nvalue",
+      expected: "new\nvalue\nold \nvalue\n",
+    },
+    {
+      name: "换行容错优先于行尾空白容错",
+      content: "old\r\nvalue\nold \nvalue\n",
+      oldStr: "old\nvalue",
+      newStr: "new\r\nvalue",
+      expected: "new\r\nvalue\nold \nvalue\n",
+    },
+    {
+      name: "容错匹配仍把正则字符和替换标记当作原文",
+      content: "[a+b].*?\t\n$&\n",
+      oldStr: "[a+b].*?\n$&",
+      newStr: "$& $` $' \\path",
+      expected: "$& $` $' \\path\n",
+    },
+    {
+      name: "删除容错匹配的整块文本",
+      content: "before\nold \nvalue\nafter\n",
+      oldStr: "old\nvalue\n",
+      newStr: "",
+      expected: "before\nafter\n",
+    },
+    {
+      name: "空白首行不被误判为多个候选",
+      content: "before\n \t\nold \nvalue\nafter\n",
+      oldStr: "\nold\nvalue",
+      newStr: "\nnew\nvalue",
+      expected: "before\n\nnew\nvalue\nafter\n",
+    },
+  ])("$name", async ({ content, oldStr, newStr, expected }) => {
+    await writeFile(filePath, content, "utf8");
+
+    const result = await editFile(filePath, oldStr, newStr);
+
+    const prefix = `文件修改成功：${filePath}\n\n`;
+    expect(result.startsWith(prefix)).toBe(true);
+    expect(applyPatch(content, result.slice(prefix.length))).toBe(expected);
+    await expect(fsReadFile(filePath, "utf8")).resolves.toBe(expected);
+  });
+
+  it.each([
+    { content: "old\r\nvalue\nold\r\nvalue", oldStr: "old\nvalue" },
+    { content: "old \nvalue\nold\t\nvalue", oldStr: "old\nvalue" },
+    { content: "a\r\na\r\na", oldStr: "a\na" },
+    { content: "a \na \na", oldStr: "a\na" },
+  ])("拒绝多处或重叠的容错候选 %j，并保留原文件", async ({ content, oldStr }) => {
+    await writeFile(filePath, content, "utf8");
+
+    await expect(editFile(filePath, oldStr, "new")).resolves.toBe(
+      "文件未修改：old_str 匹配多处，请提供更完整的旧文本",
+    );
+    await expect(fsReadFile(filePath, "utf8")).resolves.toBe(content);
+  });
+
+  it.each([
+    { content: "  old\n  value", oldStr: " old\n value" },
+    { content: "\told\n\tvalue", oldStr: "  old\n  value" },
+    { content: 'const s = "a  b";\n', oldStr: 'const s = "a b";\n' },
+    { content: "old\n", oldStr: " \t\n" },
+    { content: "old suffix\n", oldStr: "old  " },
+  ])("不忽略缩进、行内空白或整段空白 %j", async ({ content, oldStr }) => {
+    await writeFile(filePath, content, "utf8");
+
+    await expect(editFile(filePath, oldStr, "new")).resolves.toBe(
+      "文件未修改：未找到 old_str",
+    );
+    await expect(fsReadFile(filePath, "utf8")).resolves.toBe(content);
+  });
+
+  it("替换内容相同时返回未修改提示", async () => {
+    await writeFile(filePath, "before old after", "utf8");
+
+    await expect(editFile(filePath, "old", "old")).resolves.toBe(
+      "文件未修改：替换前后内容相同",
+    );
+    await expect(fsReadFile(filePath, "utf8")).resolves.toBe("before old after");
+  });
+
+  it("超长 diff 被截断时仍完整写入文件", async () => {
+    await writeFile(filePath, "old", "utf8");
+    const newStr = "新".repeat(30_000);
+
+    const result = await editFile(filePath, "old", newStr);
+
+    expect(result).toContain("文件修改成功：" + filePath);
+    expect(result).toContain("已截断");
+    expect(Buffer.byteLength(result)).toBeLessThan(53_000);
+    await expect(fsReadFile(filePath, "utf8")).resolves.toBe(newStr);
+  });
+
   describe("executeTool 的 edit_file 分支", () => {
     it("使用 old_str 和 new_str 参数修改文件并返回成功提示", async () => {
       await writeFile(filePath, "return a - b;\n", "utf8");
@@ -141,7 +269,11 @@ describe("editFile", () => {
         },
       });
 
-      expect(result).toBe("文件修改成功：" + filePath);
+      const prefix = `文件修改成功：${filePath}\n\n`;
+      expect(result.startsWith(prefix)).toBe(true);
+      expect(applyPatch("return a - b;\n", result.slice(prefix.length))).toBe(
+        "return a + b;\n",
+      );
       await expect(fsReadFile(filePath, "utf8")).resolves.toBe("return a + b;\n");
     });
 
@@ -156,6 +288,20 @@ describe("editFile", () => {
 
       expect(result).toBe("文件未修改：未找到 old_str");
       await expect(fsReadFile(filePath, "utf8")).resolves.toBe("hello");
+    });
+
+    it("将容错歧义返回给模型，并保留原文件", async () => {
+      const content = "old \nvalue\nold\t\nvalue";
+      await writeFile(filePath, content, "utf8");
+
+      const result = await executeTool({
+        id: "edit-ambiguous",
+        name: "edit_file",
+        arguments: { path: filePath, old_str: "old\nvalue", new_str: "new" },
+      });
+
+      expect(result).toBe("文件未修改：old_str 匹配多处，请提供更完整的旧文本");
+      await expect(fsReadFile(filePath, "utf8")).resolves.toBe(content);
     });
 
     it("将文件读取错误转换成工具结果", async () => {
