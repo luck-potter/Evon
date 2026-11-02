@@ -105,6 +105,7 @@ describe("callModel", () => {
       { name: "run_bash", args: { command: "printf '你好\n'" } },
       { name: "ls", args: { path: "目录", limit: 3 } },
       { name: "grep", args: { pattern: "runAgent", path: "src", glob: "*.ts", literal: true, ignoreCase: false, limit: 10 } },
+      { name: "find_files", args: { pattern: "**/*.test.ts", path: null, limit: null } },
       { name: "read_file", args: { path: "目录/文件.txt" } },
       { name: "write_file", args: { path: "empty.txt", content: "" } },
       { name: "edit_file", args: { path: "a.ts", old_str: "旧\n$&", new_str: "" } },
@@ -123,6 +124,10 @@ describe("callModel", () => {
         arguments: args,
       })),
     });
+    expect(createResponse.mock.calls[0]?.[0].tools).toContainEqual(expect.objectContaining({
+      name: "find_files",
+      strict: true,
+    }));
   });
 
   it("将返回的工具调用和执行结果正确回填到下一轮输入", async () => {
@@ -175,6 +180,11 @@ describe("callModel", () => {
   it("拒绝未知工具", async () => {
     createResponse.mockResolvedValue(response([functionCall("unknown_tool", {})]));
     await expect(callModel([])).rejects.toThrow("未知工具：unknown_tool");
+  });
+
+  it.each([{}, { pattern: 42 }])("拒绝 find_files 缺失或类型错误的模式 %j", async (args) => {
+    createResponse.mockResolvedValue(response([functionCall("find_files", args)]));
+    await expect(callModel([])).rejects.toThrow("工具 find_files 的参数 pattern 必须是字符串");
   });
 
   it("拒绝缺少关联 ID 的工具调用", async () => {

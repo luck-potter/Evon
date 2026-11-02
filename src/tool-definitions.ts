@@ -42,7 +42,7 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
     type: "function",
     name: "find_files",
     description:
-      "按 glob 递归查找文件，返回按路径排序的工作区相对路径，每行一个文件。遵循忽略规则，默认最多 100 个文件，无匹配返回 (无匹配)。当前为待实现骨架，调用会返回尚未实现提示。",
+      "按 glob 递归查找文件，返回按路径排序的工作区相对路径，每行一个文件。遵循 .gitignore 等忽略规则，跳过隐藏文件，不跟随遍历中的符号链接。默认最多 100 个文件，达到上限后停止搜索并提示；无匹配返回 (无匹配)。搜索超时为 30 秒，执行失败时返回退出码和错误原因。",
     parameters: {
       type: "object",
       properties: {
@@ -56,7 +56,7 @@ export const toolDefinitions: OpenAI.Responses.FunctionTool[] = [
         },
         limit: {
           anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }],
-          description: "最多返回的文件数量，传 null 时默认 100",
+          description: "最多返回的文件数量，达到上限后停止搜索并提示；传 null 时默认 100",
         },
       },
       required: ["pattern", "path", "limit"],

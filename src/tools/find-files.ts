@@ -59,6 +59,11 @@ export async function findFiles(
     signal: combinedSignal,
   });
   child.stdout.setEncoding("utf8");
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
 
   // TODO 4：流式解析 NUL 分隔的路径，再用 posix.matchesGlob 筛选，保留 rg 的忽略规则。
   let processError: NodeJS.ErrnoException | undefined;
@@ -116,7 +121,9 @@ export async function findFiles(
   if (processError) throw processError;
 
   if (!limitReached && child.exitCode !== 0 && child.exitCode !== 1) {
-    throw new Error(`rg 执行失败，退出码：${child.exitCode}`);
+    throw new Error(
+      `rg 执行失败（退出码 ${child.exitCode}）：${stderr.trim() || "命令异常结束"}`,
+    );
   }
 
   let result = files.length > 0 ? files.join("\n") : "(无匹配)";
