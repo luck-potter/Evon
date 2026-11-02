@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAgent } from "../src/agent.ts";
 import type { Message, ModelReply, ToolCall } from "../src/types.ts";
 
+const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+
 const { mockCallModel, mockExecuteTool } = vi.hoisted(() => ({
   mockCallModel: vi.fn(),
   mockExecuteTool: vi.fn(),
@@ -24,6 +26,9 @@ describe("runAgent", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    if (stdoutTTY) Object.defineProperty(process.stdout, "isTTY", stdoutTTY);
+    else Reflect.deleteProperty(process.stdout, "isTTY");
   });
 
   it("无工具调用时直接返回模型文本并结束", async () => {
@@ -82,6 +87,50 @@ describe("runAgent", () => {
       role: "tool",
       toolCallId: "call_read_1",
       content: '1: {"name": "mini-swe-agent"}',
+    });
+  });
+
+  it.each([
+    { name: "交互终端显示彩色 diff", isTTY: true, noColor: undefined, colored: true },
+    { name: "非交互终端显示纯文本 diff", isTTY: false, noColor: undefined, colored: false },
+    { name: "NO_COLOR 禁用 diff 配色", isTTY: true, noColor: "1", colored: false },
+  ])("$name，回填给模型的结果保持纯文本", async ({ isTTY, noColor, colored }) => {
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: isTTY,
+    });
+    vi.stubEnv("NO_COLOR", noColor);
+    vi.stubEnv("TERM", "xterm-256color");
+
+    const toolCall: ToolCall = {
+      id: "call_edit_1",
+      name: "edit_file",
+      arguments: { path: "example.ts", old_str: "old", new_str: "new" },
+    };
+    const toolResult =
+      "文件修改成功：example.ts\n\n--- example.ts\n+++ example.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    mockCallModel
+      .mockResolvedValueOnce({ role: "assistant", content: "", toolCalls: [toolCall] })
+      .mockResolvedValueOnce({ role: "assistant", content: "修改完成" });
+    mockExecuteTool.mockResolvedValueOnce(toolResult);
+
+    const messages: Message[] = [];
+    await runAgent("修改示例文件", messages);
+
+    if (colored) {
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("\u001b[32m+new\u001b[39m"),
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("\u001b[31m-old\u001b[39m"),
+      );
+    } else {
+      expect(console.log).toHaveBeenCalledWith(toolResult);
+    }
+    expect(mockCallModel.mock.calls[1][0]).toContainEqual({
+      role: "tool",
+      toolCallId: toolCall.id,
+      content: toolResult,
     });
   });
 

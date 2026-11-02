@@ -2,6 +2,7 @@ import { platform } from "node:os";
 import { callModel } from "./llm.ts";
 import { executeTool } from "./tools/index.ts";
 import type { Message, ModelReply } from "./types.ts";
+import { formatDiff } from "./utils/format-diff.ts";
 
 export interface RunAgentOptions {
   maxSteps?: number;
@@ -85,9 +86,9 @@ export async function runAgent(
 
       console.log(`[工具] ${call.name} : ${JSON.stringify(call.arguments)}`);
       const result = await executeTool(call, process.cwd(), signal);
-      // 把编辑结果展示给使用者
+      // 终端展示时着色，回填给模型的 result 保留纯文本。
       if (call.name === "edit_file") {
-        console.log(result);
+        console.log(formatDiff(result));
       }
 
       messages.push({ role: "tool", toolCallId: call.id, content: result });
