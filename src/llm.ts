@@ -10,6 +10,7 @@ import OpenAI from "openai";
 export type ToolCall = OpenAI.Responses.ResponseFunctionToolCall;
 
 export interface CallOptions {
+  tools?: typeof toolDefinitions;
   onTextDelta?: (delta: string) => void;
   onToolCall?: (call: { name: string }) => void;
   onUsage?: (usage: TokenUsage | null) => void;
@@ -114,7 +115,7 @@ export async function callModel(
     {
       model: process.env.MODEL,
       input: toResponseInput(message),
-      tools: toolDefinitions,
+      tools: options?.tools ?? toolDefinitions,
       stream: true,
     },
     ...(options?.signal ? [{ signal: options.signal }] : []),

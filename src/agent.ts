@@ -1,4 +1,6 @@
 import { platform } from "node:os";
+import { compactContext } from "./compaction.ts";
+import { defaultCompactionSettings, estimateContextTokens, shouldCompact } from "./context.ts";
 import { callModel } from "./llm.ts";
 import { executeTool } from "./tools/index.ts";
 import type { Message, ModelReply, TokenUsage } from "./types.ts";
@@ -16,6 +18,11 @@ export async function runAgent(
   options: RunAgentOptions = {},
 ): Promise<string> {
   const { maxSteps = 30, signal, onUsage } = options;
+  const contextWindow = Number(process.env.CONTEXT_WINDOW ?? 0);
+  const minimumWindow = defaultCompactionSettings.reserveTokens + defaultCompactionSettings.keepRecentTokens;
+  if (contextWindow !== 0 && (!Number.isSafeInteger(contextWindow) || contextWindow <= minimumWindow)) {
+    throw new Error(`CONTEXT_WINDOW 必须为 0 或大于 ${minimumWindow} 的安全整数（0 关闭自动压缩）。`);
+  }
   if (messages.length === 0) {
     messages.push({
       role: "system",
@@ -36,11 +43,19 @@ export async function runAgent(
     }
 
     // 2. 调用模型：加 try-catch 捕获模型生成阶段的中断（比如 fetch 被 abort）
-    console.log(`\n[步骤 ${step + 1}/${maxSteps}]`);
     let reply: ModelReply;
     let streamed = false;
     let hasStreamedText = false;
     try {
+      if (contextWindow > 0 && shouldCompact(estimateContextTokens(messages), contextWindow)) {
+        console.log("[正在自动压缩上下文]");
+        await compactContext(messages, { signal, onUsage });
+        if (shouldCompact(estimateContextTokens(messages), contextWindow)) {
+          throw new Error("自动压缩未能将上下文降至预算内，请使用 /clear 清理会话或减少输入。");
+        }
+        console.log("上下文已自动压缩");
+      }
+      console.log(`\n[步骤 ${step + 1}/${maxSteps}]`);
       reply = await callModel(messages, {
         onTextDelta: (delta) => {
           streamed = true;

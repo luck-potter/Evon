@@ -21,6 +21,7 @@ describe("runAgent", () => {
   beforeEach(() => {
     mockCallModel.mockReset();
     mockExecuteTool.mockReset();
+    vi.stubEnv("CONTEXT_WINDOW", undefined);
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -227,5 +228,106 @@ describe("runAgent", () => {
         }),
       ]),
     );
+  });
+
+  describe("自动上下文压缩", () => {
+    let messages: Message[];
+    beforeEach(() => {
+      vi.stubEnv("CONTEXT_WINDOW", "128000");
+      mockCallModel.mockResolvedValue({ role: "assistant", content: "完成" });
+      messages = [
+        { role: "system", content: "先阅读，再修改。" },
+        { role: "user", content: "旧任务".repeat(10000) },
+        { role: "assistant", content: "旧任务已完成" },
+        { role: "user", content: "近期上下文".repeat(16000) },
+        { role: "assistant", content: "就绪", usage: { inputTokens: 111980, outputTokens: 20, totalTokens: 112000 } },
+      ];
+    });
+
+    it("超过阈值时先摘要再继续任务，保留最新输入并统计摘要用量", async () => {
+      const signal = new AbortController().signal;
+      const onUsage = vi.fn();
+      const usage = { inputTokens: 100, outputTokens: 20, totalTokens: 120 };
+      mockCallModel.mockImplementationOnce(async (_messages, options) => {
+        options.onUsage(usage);
+        return { role: "assistant", content: "旧任务已完成，继续当前任务。" };
+      });
+
+      expect(await runAgent("继续", messages, { signal, onUsage })).toBe("完成");
+      expect(mockCallModel).toHaveBeenCalledTimes(2);
+      expect(mockCallModel.mock.calls[0][1]).toEqual({ tools: [], signal, onUsage });
+      expect(onUsage).toHaveBeenCalledWith(usage);
+      expect(messages[0]).toEqual({ role: "system", content: "先阅读，再修改。" });
+      expect(messages[1].content).toContain("[历史摘要");
+      expect(messages.at(-2)).toEqual({ role: "user", content: "继续" });
+      expect(messages.filter((message) => message.role === "assistant").every((message) => !message.usage)).toBe(true);
+    });
+
+    it.each([0, 128000])("窗口为 %s，禁用或恰好达到阈值时不压缩", async (contextWindow) => {
+      vi.stubEnv("CONTEXT_WINDOW", String(contextWindow));
+      if (contextWindow) {
+        messages[4] = { role: "assistant", content: "就绪", usage: { inputTokens: 111595, outputTokens: 20, totalTokens: 111615 } };
+      }
+      await runAgent("继续", messages);
+      expect(mockCallModel).toHaveBeenCalledTimes(1);
+      expect(mockCallModel.mock.calls[0][1]).not.toHaveProperty("tools");
+    });
+
+    it("工具回填超过阈值时在下一步压缩，保留调用与结果", async () => {
+      messages[4] = { role: "assistant", content: "就绪" };
+      const call: ToolCall = { id: "read_1", name: "read_file", arguments: { path: "a.ts" } };
+      mockCallModel
+        .mockResolvedValueOnce({ role: "assistant", content: "", toolCalls: [call], usage: { inputTokens: 111580, outputTokens: 20, totalTokens: 111600 } })
+        .mockResolvedValueOnce({ role: "assistant", content: "旧任务摘要" });
+      mockExecuteTool.mockResolvedValueOnce("工具结果".repeat(40));
+
+      await runAgent("继续", messages);
+      expect(mockCallModel).toHaveBeenCalledTimes(3);
+      expect(mockCallModel.mock.calls[1][1]).toMatchObject({ tools: [] });
+      expect(messages.at(-3)).toMatchObject({ role: "assistant", toolCalls: [call] });
+      expect(messages.at(-2)).toEqual({ role: "tool", toolCallId: call.id, content: "工具结果".repeat(40) });
+      expect(mockExecuteTool).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["调用失败", "摘要过长"])("%s 时保留历史并停止本轮任务", async (failure) => {
+      const before = structuredClone(messages);
+      if (failure === "调用失败") mockCallModel.mockRejectedValueOnce(new Error("网络断开"));
+      else mockCallModel.mockResolvedValueOnce({ role: "assistant", content: "摘要".repeat(20000) });
+
+      await expect(runAgent("继续", messages)).rejects.toThrow(failure === "调用失败" ? "网络断开" : "自动压缩未能将上下文降至预算内");
+      expect(messages).toEqual([...before, { role: "user", content: "继续" }]);
+      expect(mockCallModel).toHaveBeenCalledTimes(1);
+      expect(mockExecuteTool).not.toHaveBeenCalled();
+    });
+
+    it("压缩后保留内容仍超过预算时停止，不继续调用模型", async () => {
+      messages[3] = { role: "user", content: "近期上下文".repeat(100000) };
+      mockCallModel.mockResolvedValueOnce({ role: "assistant", content: "旧任务摘要" });
+
+      await expect(runAgent("继续", messages)).rejects.toThrow("自动压缩未能将上下文降至预算内");
+      expect(mockCallModel).toHaveBeenCalledTimes(1);
+      expect(messages[1].content).toContain("旧任务摘要");
+      expect(messages.at(-1)).toEqual({ role: "user", content: "继续" });
+    });
+
+    it("摘要期间取消时保留历史，不再继续调用模型", async () => {
+      const before = structuredClone(messages);
+      const controller = new AbortController();
+      mockCallModel.mockImplementationOnce(async () => {
+        controller.abort();
+        return { role: "assistant", content: "摘要" };
+      });
+      expect(await runAgent("继续", messages, { signal: controller.signal })).toBe("操作已被用户打断。");
+      expect(messages).toEqual([...before, { role: "user", content: "继续" }, { role: "assistant", content: "操作已被用户取消。" }]);
+      expect(mockCallModel).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["abc", "-1", "0.5", "36384"])("拒绝非法窗口 %s，保留历史且不调用模型", async (value) => {
+      vi.stubEnv("CONTEXT_WINDOW", value);
+      const before = structuredClone(messages);
+      await expect(runAgent("继续", messages)).rejects.toThrow("CONTEXT_WINDOW");
+      expect(messages).toEqual(before);
+      expect(mockCallModel).not.toHaveBeenCalled();
+    });
   });
 });

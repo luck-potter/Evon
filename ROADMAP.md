@@ -61,8 +61,8 @@
 
 - [x] **Token 统计与预算监控**
   - 追踪每轮调用的 Prompt Token 与 Completion Token，终端显示消耗明细。
-- [ ] **自动上下文压缩（Compaction）**
-  - 已实现上下文估算与 `contextTokens > contextWindow - reserveTokens` 判断；待接入保留 system prompt、最近完整交互的历史切分与摘要生成。
+- [x] **自动上下文压缩（Compaction）**
+  - 支持 `/compact` 手动压缩；配置 `CONTEXT_WINDOW` 后在每次模型调用前自动检查并压缩，保留 system prompt 与最近完整工具交互，摘要用量计入会话消耗。
 - [ ] **会话持久化存储**
   - 会话消息流自动记录在 `.evon/sessions/<session_id>.jsonl` 中。
   - 支持 `npm start -- --resume <session_id>` 恢复先前会话。

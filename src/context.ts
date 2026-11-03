@@ -6,10 +6,16 @@ export interface CompactionSettings {
   keepRecentTokens: number;
 }
 
+export const defaultCompactionSettings: CompactionSettings = {
+  enabled: true,
+  reserveTokens: 16384,
+  keepRecentTokens: 20000,
+};
+
 export function shouldCompact(
   contextTokens: number,
   contextWindow: number,
-  settings: CompactionSettings,
+  settings: CompactionSettings = defaultCompactionSettings,
 ): boolean {
   if (!settings.enabled) return false;
 

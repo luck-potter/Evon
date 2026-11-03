@@ -282,6 +282,12 @@ describe("callModel", () => {
     );
   });
 
+  it("摘要请求可以显式关闭工具", async () => {
+    createResponse.mockResolvedValue(response([], "历史摘要"));
+    await callModel([], { tools: [] });
+    expect(createResponse).toHaveBeenCalledWith(expect.objectContaining({ tools: [] }));
+  });
+
   it("当 signal 已打断或在流式接收过程中被打断时抛出错误", async () => {
     const controller = new AbortController();
     controller.abort(new Error("用户打断"));
