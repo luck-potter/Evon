@@ -64,8 +64,9 @@
 - [x] **自动上下文压缩（Compaction）**
   - 支持 `/compact` 手动压缩；配置 `CONTEXT_WINDOW` 后在每次模型调用前自动检查并压缩，保留 system prompt 与最近完整工具交互，摘要用量计入会话消耗。
 - [ ] **会话持久化存储**
-  - 会话消息流自动记录在 `.evon/sessions/<session_id>.jsonl` 中。
-  - 支持 `npm start -- --resume <session_id>` 恢复先前会话。
+  - [x] 会话消息流自动记录在 `.evon/sessions/<session_id>.jsonl` 中。
+  - [x] 支持 `npm start -- --resume <session_id>` 恢复普通消息历史并继续追加；`/clear` 创建新会话。
+  - [ ] 持久化压缩后的有效上下文和累计 Token 用量，恢复后保持一致。
 
 ---
 

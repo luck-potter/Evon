@@ -1,9 +1,35 @@
 import readline from "node:readline/promises";
 import { runAgent } from "./agent.ts";
+import { parseCliArgs } from "./cli.ts";
 import { compactContext } from "./compaction.ts";
 import type { Message, TokenUsage } from "./types.ts";
 import { createSessionUsage, recordUsage, formatUsage } from "./usage.ts";
-import { appendMessage, createSession } from "./session.ts";
+import { appendMessage, createSession, loadSession } from "./session.ts";
+
+let messages: Message[] = [];
+let session: { id: string; filePath: string };
+let initialTask = "";
+let resumeId: string | undefined;
+
+try {
+  ({ resumeId, initialTask } = parseCliArgs(process.argv.slice(2)));
+  if (resumeId !== undefined) {
+    const restored = await loadSession(process.cwd(), resumeId);
+    session = restored;
+    messages = restored.messages;
+    console.log(`[已恢复会话] ${session.id}（${messages.length} 条消息）`);
+  } else {
+    session = await createSession(process.cwd());
+    console.log(`[新会话] ${session.id}`);
+  }
+} catch (error) {
+  if (resumeId && error instanceof Error && "code" in error && error.code === "ENOENT") {
+    console.error(`找不到会话 ${resumeId}，请检查当前工作目录和会话 ID。`);
+  } else {
+    console.error(error instanceof Error ? error.message : String(error));
+  }
+  process.exit(1);
+}
 
 let currentAbortController: AbortController | null = null;
 const rl = readline.createInterface({
@@ -13,10 +39,7 @@ const rl = readline.createInterface({
 rl.on("close", () => process.exit(0));
 rl.on("SIGINT", () => {
   if (currentAbortController) {
-    // 关键这一句：按一下遥控器的取消按钮
-
     currentAbortController.abort();
-
     currentAbortController = null;
     console.log("\n[已打断]");
   } else {
@@ -24,7 +47,6 @@ rl.on("SIGINT", () => {
   }
 });
 
-const messages: Message[] = [];
 let sessionUsage = createSessionUsage();
 
 function onUsage(usage: TokenUsage | null): void {
@@ -32,31 +54,11 @@ function onUsage(usage: TokenUsage | null): void {
   console.log(formatUsage(usage, sessionUsage));
 }
 
-let session = await createSession(process.cwd());
-
-async function onMessage(message: Message): Promise<void> {
-  await appendMessage(session.filePath, message);
-}
-
-const initialTask = process.argv.slice(2).join(" ").trim();
-if (initialTask) {
-  currentAbortController = new AbortController();
-  try {
-    await runAgent(initialTask, messages, {
-      signal: currentAbortController.signal,
-      onUsage,
-      onMessage,
-    });
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-  } finally {
-    // 任务正常结束或出错，清空引用
-    currentAbortController = null;
-  }
-}
-
 repl: while (true) {
-  const input = (await rl.question("\nevon > ")).trim();
+  const input = initialTask || (await rl.question("\nevon > ")).trim();
+  // 启动任务始终作为文本，斜杠命令只在交互输入中生效。
+  const command = initialTask ? null : input;
+  initialTask = "";
   if (!input) continue;
 
   currentAbortController = new AbortController();
@@ -64,19 +66,18 @@ repl: while (true) {
     const options = {
       signal: currentAbortController.signal,
       onUsage,
-      onMessage,
+      onMessage: (message: Message) => appendMessage(session.filePath, message),
     };
-    switch (input) {
+    switch (command) {
       case "/exit":
       case "/quit":
         rl.close();
         break repl;
       case "/clear":
         session = await createSession(process.cwd());
-
         messages.length = 0;
         sessionUsage = createSessionUsage();
-        console.log("会话已清空");
+        console.log(`会话已清空，新会话：${session.id}`);
         break;
       case "/compact": {
         console.log("[正在压缩上下文]");
@@ -92,7 +93,6 @@ repl: while (true) {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
   } finally {
-    // 任务正常结束或出错，清空引用
     currentAbortController = null;
   }
 }
