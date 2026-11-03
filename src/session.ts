@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { mkdir, writeFile, readFile, appendFile } from "node:fs/promises";
-import type { Message } from "./types.ts";
+import type { Message, TokenUsage } from "./types.ts";
+import { createSessionUsage, recordUsage, type SessionUsage } from "./usage.ts";
 
 export type SessionRecord =
   | {
@@ -14,6 +15,14 @@ export type SessionRecord =
   | {
       type: "message";
       message: Message;
+    }
+  | {
+      type: "compaction";
+      messages: Message[];
+    }
+  | {
+      type: "usage";
+      usage: TokenUsage | null;
     };
 
 export async function createSession(
@@ -39,14 +48,10 @@ export async function createSession(
   return { id, filePath };
 }
 
-export async function appendMessage(
+export async function appendSessionRecord(
   filePath: string,
-  message: Message,
+  record: SessionRecord,
 ): Promise<void> {
-  const record: SessionRecord = {
-    type: "message",
-    message,
-  };
   await appendFile(filePath, JSON.stringify(record) + "\n", {
     encoding: "utf8",
   });
@@ -86,17 +91,29 @@ export async function loadSession(
   id: string;
   filePath: string;
   messages: Message[];
+  usage: SessionUsage;
 }> {
   const filePath = path.join(cwd, ".evon", "sessions", `${sessionId}.jsonl`);
   const records = await readSessionRecords(filePath);
   if (records.length === 0) {
     throw new Error(`会话 ${sessionId} 不存在或已损坏。`);
   }
-  const messages: Message[] = [];
+  let messages: Message[] = [];
+  const usage = createSessionUsage();
+  let hasUsageRecords = false;
   for (const record of records) {
     if (record.type === "message") {
       messages.push(record.message);
+      // 旧会话从回复累计；新 usage 记录先于回复写入，避免重复计数。
+      if (!hasUsageRecords && record.message.role === "assistant" && record.message.usage) {
+        recordUsage(usage, record.message.usage);
+      }
+    } else if (record.type === "compaction") {
+      messages = record.messages;
+    } else if (record.type === "usage") {
+      hasUsageRecords = true;
+      recordUsage(usage, record.usage);
     }
   }
-  return { id: sessionId, filePath, messages };
+  return { id: sessionId, filePath, messages, usage };
 }

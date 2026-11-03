@@ -49,6 +49,22 @@ describe("runAgent", () => {
     expect(mockExecuteTool).not.toHaveBeenCalled();
   });
 
+  it("等待用量保存，失败时停止本轮任务", async () => {
+    const messages: Message[] = [];
+    const onUsage = async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      throw new Error("用量写入失败");
+    };
+    mockCallModel.mockImplementationOnce(async (_messages, options) => {
+      await options.onUsage(null);
+      return { role: "assistant", content: "回复" };
+    });
+
+    await expect(runAgent("任务", messages, { onUsage })).rejects.toThrow("用量写入失败");
+    expect(messages.map(message => message.role)).toEqual(["system", "user"]);
+    expect(mockExecuteTool).not.toHaveBeenCalled();
+  });
+
   it("多轮工具调用流转：执行工具并回填结果后获得最终回复", async () => {
     const toolCall: ToolCall = {
       id: "call_read_1",
@@ -308,6 +324,16 @@ describe("runAgent", () => {
       expect(mockCallModel).toHaveBeenCalledTimes(1);
       expect(messages[1].content).toContain("旧任务摘要");
       expect(messages.at(-1)).toEqual({ role: "user", content: "继续" });
+    });
+
+    it("自动压缩保存失败时保留历史，不继续执行任务", async () => {
+      const before = structuredClone(messages);
+      const onCompaction = vi.fn().mockRejectedValue(new Error("保存失败"));
+
+      await expect(runAgent("继续", messages, { onCompaction })).rejects.toThrow("保存失败");
+      expect(messages).toEqual([...before, { role: "user", content: "继续" }]);
+      expect(mockCallModel).toHaveBeenCalledTimes(1);
+      expect(mockExecuteTool).not.toHaveBeenCalled();
     });
 
     it("摘要期间取消时保留历史，不再继续调用模型", async () => {

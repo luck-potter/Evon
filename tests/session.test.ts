@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  appendMessage,
+  appendSessionRecord,
   createSession,
+  loadSession,
   readSessionRecords,
   type SessionRecord,
 } from "../src/session.ts";
@@ -56,7 +57,7 @@ describe("readSessionRecords", () => {
       ...toolCalls.map(call => ({ role: "tool" as const, toolCallId: call.id, content: "工具结果或执行失败提示" })),
       { role: "assistant", content: "完成", usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 } },
     ];
-    for (const message of messages) await appendMessage(session.filePath, message);
+    for (const message of messages) await appendSessionRecord(session.filePath, { type: "message", message });
     const original = await readFile(session.filePath, "utf8");
 
     const records = await readSessionRecords(session.filePath);
@@ -65,6 +66,85 @@ describe("readSessionRecords", () => {
       type: "session", version: 1, id: session.id, cwd: testDir, createdAt: expect.any(String),
     });
     expect(records.slice(1)).toEqual(messages.map(message => ({ type: "message", message })));
+    expect(await loadSession(testDir, session.id)).toEqual({
+      ...session, messages,
+      usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25, unknownCalls: 0 },
+    });
+    expect(await readFile(session.filePath, "utf8")).toBe(original);
+  });
+
+  it("恢复最近一次压缩快照及后续消息，保留系统提示和完整工具交互", async () => {
+    const session = await createSession(testDir);
+    const system: Message = { role: "system", content: "编程助手" };
+    const first: Message[] = [system, { role: "user", content: "第一份摘要" }];
+    const latest: Message[] = [
+      system,
+      { role: "user", content: "合并后的摘要" },
+      { role: "assistant", content: "", toolCalls: [
+        { id: "read", name: "read_file", arguments: { path: "a.ts" } },
+      ] },
+      { role: "tool", toolCallId: "read", content: "文件内容" },
+    ];
+    const next: Message = { role: "assistant", content: "读完了", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } };
+    const records: SessionRecord[] = [
+      { type: "message", message: system },
+      userRecord,
+      { type: "compaction", messages: first },
+      { type: "message", message: { role: "user", content: "中间任务" } },
+      { type: "compaction", messages: latest },
+      { type: "message", message: next },
+    ];
+    for (const record of records) await appendSessionRecord(session.filePath, record);
+    const original = await readFile(session.filePath, "utf8");
+
+    expect(await loadSession(testDir, session.id)).toEqual({
+      ...session, messages: [...latest, next],
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, unknownCalls: 0 },
+    });
+    expect(await readFile(session.filePath, "utf8")).toBe(original);
+  });
+
+  it.each(["compaction", "usage"])("末尾 %s 记录不完整时保留上次状态，恢复后仍能追加", async type => {
+    const session = await createSession(testDir);
+    const messages: Message[] = [{ role: "user", content: "已保存的摘要" }];
+    await appendSessionRecord(session.filePath, userRecord);
+    await appendSessionRecord(session.filePath, { type: "compaction", messages });
+    const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+    await appendSessionRecord(session.filePath, { type: "usage", usage });
+    await appendFile(session.filePath, `{"type":"${type}",`, "utf8");
+
+    const restored = await loadSession(testDir, session.id);
+    expect(restored.messages).toEqual(messages);
+    expect(restored.usage.totalTokens).toBe(15);
+
+    const next: Message = { role: "user", content: "继续任务" };
+    await appendSessionRecord(session.filePath, { type: "message", message: next });
+    await appendSessionRecord(session.filePath, { type: "usage", usage });
+    const continued = await loadSession(testDir, session.id);
+    expect(continued.messages).toEqual([...messages, next]);
+    expect(continued.usage.totalTokens).toBe(30);
+  });
+
+  it("兼容旧用量并累计独立记录，回复和快照不重复计数，未保存回复的调用仍计入", async () => {
+    const session = await createSession(testDir);
+    const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+    const reply: Message = { role: "assistant", content: "完成", usage };
+    const messages: Message[] = [{ role: "user", content: "摘要" }, reply];
+    const records: SessionRecord[] = [
+      { type: "message", message: reply },
+      { type: "usage", usage },
+      { type: "message", message: reply },
+      { type: "compaction", messages },
+      { type: "usage", usage: null },
+      { type: "usage", usage },
+    ];
+    for (const record of records) await appendSessionRecord(session.filePath, record);
+    const original = await readFile(session.filePath, "utf8");
+
+    expect(await loadSession(testDir, session.id)).toEqual({
+      ...session, messages,
+      usage: { inputTokens: 30, outputTokens: 15, totalTokens: 45, unknownCalls: 1 },
+    });
     expect(await readFile(session.filePath, "utf8")).toBe(original);
   });
 
@@ -90,6 +170,11 @@ describe("readSessionRecords", () => {
   it("只有会话头的新会话也可以读取", async () => {
     await writeRecords([header]);
     await expect(readSessionRecords(filePath)).resolves.toEqual([header]);
+    const session = await createSession(testDir);
+    expect(await loadSession(testDir, session.id)).toEqual({
+      ...session, messages: [],
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, unknownCalls: 0 },
+    });
   });
 
   it.each(["", " \n\t\r\n", "not json\n{broken"])("空文件或没有可用记录时返回空数组 %#", async content => {
@@ -120,7 +205,7 @@ describe("readSessionRecords", () => {
 
     const message: Message = { role: "assistant", content: "恢复后追加的新消息" };
     const record: SessionRecord = { type: "message", message };
-    await appendMessage(filePath, message);
+    await appendSessionRecord(filePath, record);
 
     await expect(readSessionRecords(filePath)).resolves.toEqual([header, userRecord, record]);
     expect(await readFile(filePath, "utf8")).toBe(`${content}\n${JSON.stringify(record)}\n`);

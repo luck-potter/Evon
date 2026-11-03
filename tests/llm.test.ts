@@ -261,6 +261,15 @@ describe("callModel", () => {
     expect(reply).not.toHaveProperty("usage");
   });
 
+  it.each([undefined, { input_tokens: 10, output_tokens: 5, total_tokens: 15 }])("等待异步用量保存，写入失败时拒绝返回回复 %#", async usage => {
+    createResponse.mockResolvedValue(response([], "回复", { usage }));
+    const onUsage = async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      throw new Error("用量写入失败");
+    };
+    await expect(callModel([], { onUsage })).rejects.toThrow("用量写入失败");
+  });
+
   it("当 stream 抛出 error 事件时抛出错误", async () => {
     createResponse.mockResolvedValue(
       (async function* () {

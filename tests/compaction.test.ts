@@ -68,6 +68,15 @@ describe("compactContext", () => {
     expect(mockCallModel.mock.calls[1][0][1].content).toContain("目标：继续修改");
   });
 
+  it("压缩保存失败时保留原上下文", async () => {
+    const before = structuredClone(messages);
+    const onCompaction = vi.fn().mockRejectedValue(new Error("保存失败"));
+
+    await expect(compactContext(messages, { keepRecentTokens: 20, onCompaction }))
+      .rejects.toThrow("保存失败");
+    expect(messages).toEqual(before);
+  });
+
   it("空历史或历史小于保留预算时不调用模型", async () => {
     expect(await compactContext([])).toBe(false);
     expect(await compactContext(messages)).toBe(false);

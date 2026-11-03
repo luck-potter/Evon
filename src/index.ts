@@ -4,9 +4,10 @@ import { parseCliArgs } from "./cli.ts";
 import { compactContext } from "./compaction.ts";
 import type { Message, TokenUsage } from "./types.ts";
 import { createSessionUsage, recordUsage, formatUsage } from "./usage.ts";
-import { appendMessage, createSession, loadSession } from "./session.ts";
+import { appendSessionRecord, createSession, loadSession } from "./session.ts";
 
 let messages: Message[] = [];
+let sessionUsage = createSessionUsage();
 let session: { id: string; filePath: string };
 let initialTask = "";
 let resumeId: string | undefined;
@@ -17,6 +18,7 @@ try {
     const restored = await loadSession(process.cwd(), resumeId);
     session = restored;
     messages = restored.messages;
+    sessionUsage = restored.usage;
     console.log(`[已恢复会话] ${session.id}（${messages.length} 条消息）`);
   } else {
     session = await createSession(process.cwd());
@@ -47,9 +49,8 @@ rl.on("SIGINT", () => {
   }
 });
 
-let sessionUsage = createSessionUsage();
-
-function onUsage(usage: TokenUsage | null): void {
+async function onUsage(usage: TokenUsage | null): Promise<void> {
+  await appendSessionRecord(session.filePath, { type: "usage", usage });
   recordUsage(sessionUsage, usage);
   console.log(formatUsage(usage, sessionUsage));
 }
@@ -66,7 +67,10 @@ repl: while (true) {
     const options = {
       signal: currentAbortController.signal,
       onUsage,
-      onMessage: (message: Message) => appendMessage(session.filePath, message),
+      onMessage: (message: Message) =>
+        appendSessionRecord(session.filePath, { type: "message", message }),
+      onCompaction: (messages: Message[]) =>
+        appendSessionRecord(session.filePath, { type: "compaction", messages }),
     };
     switch (command) {
       case "/exit":

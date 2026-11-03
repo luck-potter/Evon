@@ -13,8 +13,9 @@ import { formatDiff } from "./utils/format-diff.ts";
 export interface RunAgentOptions {
   maxSteps?: number;
   signal?: AbortSignal;
-  onUsage?: (usage: TokenUsage | null) => void;
+  onUsage?: (usage: TokenUsage | null) => void | Promise<void>;
   onMessage?: (message: Message) => Promise<void>;
+  onCompaction?: (messages: Message[]) => Promise<void>;
 }
 
 export async function runAgent(
@@ -22,7 +23,7 @@ export async function runAgent(
   messages: Message[] = [],
   options: RunAgentOptions = {},
 ): Promise<string> {
-  const { maxSteps = 30, signal, onUsage, onMessage } = options;
+  const { maxSteps = 30, signal, onUsage, onMessage, onCompaction } = options;
   const contextWindow = Number(process.env.CONTEXT_WINDOW ?? 0);
   const minimumWindow =
     defaultCompactionSettings.reserveTokens +
@@ -69,7 +70,7 @@ export async function runAgent(
         shouldCompact(estimateContextTokens(messages), contextWindow)
       ) {
         console.log("[正在自动压缩上下文]");
-        await compactContext(messages, { signal, onUsage });
+        await compactContext(messages, { signal, onUsage, onCompaction });
         if (shouldCompact(estimateContextTokens(messages), contextWindow)) {
           throw new Error(
             "自动压缩未能将上下文降至预算内，请使用 /clear 清理会话或减少输入。",
@@ -96,7 +97,7 @@ export async function runAgent(
             process.stdout.write("\n");
             streamed = false; // 消费掉换行，避免 callModel 结束后多出一个空行
           }
-          onUsage?.(usage);
+          return onUsage?.(usage);
         },
         signal,
       });

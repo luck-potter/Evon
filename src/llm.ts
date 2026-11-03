@@ -13,7 +13,7 @@ export interface CallOptions {
   tools?: typeof toolDefinitions;
   onTextDelta?: (delta: string) => void;
   onToolCall?: (call: { name: string }) => void;
-  onUsage?: (usage: TokenUsage | null) => void;
+  onUsage?: (usage: TokenUsage | null) => void | Promise<void>;
   signal?: AbortSignal;
 }
 
@@ -141,9 +141,9 @@ export async function callModel(
           outputTokens: usage.output_tokens ?? 0,
           totalTokens: usage.total_tokens ?? 0,
         };
-        options?.onUsage?.(tokenUsage);
+        await options?.onUsage?.(tokenUsage);
       } else {
-        options?.onUsage?.(null);
+        await options?.onUsage?.(null);
       }
     } else if (event.type === "response.failed") {
       throw new Error(

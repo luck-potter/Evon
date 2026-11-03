@@ -6,9 +6,17 @@ const SUMMARY_PREFIX = "[历史摘要，仅作为上下文参考]\n";
 
 export async function compactContext(
   messages: Message[],
-  options: Pick<CallOptions, "signal" | "onUsage"> & { keepRecentTokens?: number } = {},
+  options: Pick<CallOptions, "signal" | "onUsage"> & {
+    keepRecentTokens?: number;
+    onCompaction?: (messages: Message[]) => Promise<void>;
+  } = {},
 ): Promise<boolean> {
-  const { keepRecentTokens = defaultCompactionSettings.keepRecentTokens, signal, onUsage } = options;
+  const {
+    keepRecentTokens = defaultCompactionSettings.keepRecentTokens,
+    signal,
+    onUsage,
+    onCompaction,
+  } = options;
   signal?.throwIfAborted();
   if (!Number.isSafeInteger(keepRecentTokens) || keepRecentTokens < 0) {
     throw new Error("keepRecentTokens 必须是非负安全整数。");
@@ -62,7 +70,12 @@ export async function compactContext(
     const { usage, ...rest } = message;
     return rest;
   });
-  messages.splice(0, messages.length,
-    ...messages.filter((message) => message.role === "system"), summary, ...kept);
+  const compacted = [
+    ...messages.filter((message) => message.role === "system"),
+    summary,
+    ...kept,
+  ];
+  await onCompaction?.(compacted);
+  messages.splice(0, messages.length, ...compacted);
   return true;
 }
