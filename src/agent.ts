@@ -1,6 +1,10 @@
 import { platform } from "node:os";
 import { compactContext } from "./compaction.ts";
-import { defaultCompactionSettings, estimateContextTokens, shouldCompact } from "./context.ts";
+import {
+  defaultCompactionSettings,
+  estimateContextTokens,
+  shouldCompact,
+} from "./context.ts";
 import { callModel } from "./llm.ts";
 import { executeTool } from "./tools/index.ts";
 import type { Message, ModelReply, TokenUsage } from "./types.ts";
@@ -10,6 +14,7 @@ export interface RunAgentOptions {
   maxSteps?: number;
   signal?: AbortSignal;
   onUsage?: (usage: TokenUsage | null) => void;
+  onMessage?: (message: Message) => Promise<void>;
 }
 
 export async function runAgent(
@@ -17,14 +22,26 @@ export async function runAgent(
   messages: Message[] = [],
   options: RunAgentOptions = {},
 ): Promise<string> {
-  const { maxSteps = 30, signal, onUsage } = options;
+  const { maxSteps = 30, signal, onUsage, onMessage } = options;
   const contextWindow = Number(process.env.CONTEXT_WINDOW ?? 0);
-  const minimumWindow = defaultCompactionSettings.reserveTokens + defaultCompactionSettings.keepRecentTokens;
-  if (contextWindow !== 0 && (!Number.isSafeInteger(contextWindow) || contextWindow <= minimumWindow)) {
-    throw new Error(`CONTEXT_WINDOW 必须为 0 或大于 ${minimumWindow} 的安全整数（0 关闭自动压缩）。`);
+  const minimumWindow =
+    defaultCompactionSettings.reserveTokens +
+    defaultCompactionSettings.keepRecentTokens;
+  async function addMessage(message: Message): Promise<void> {
+    messages.push(message);
+    await onMessage?.(message);
+  }
+
+  if (
+    contextWindow !== 0 &&
+    (!Number.isSafeInteger(contextWindow) || contextWindow <= minimumWindow)
+  ) {
+    throw new Error(
+      `CONTEXT_WINDOW 必须为 0 或大于 ${minimumWindow} 的安全整数（0 关闭自动压缩）。`,
+    );
   }
   if (messages.length === 0) {
-    messages.push({
+    await addMessage({
       role: "system",
       content: [
         "你是一个编程助手。先阅读代码，再修改，最后运行测试验证。",
@@ -34,7 +51,7 @@ export async function runAgent(
       ].join("\n"),
     });
   }
-  messages.push({ role: "user", content: task });
+  await addMessage({ role: "user", content: task });
 
   for (let step = 0; step < maxSteps; step++) {
     // 1. 每轮 step 开始前检查是否已打断
@@ -47,11 +64,16 @@ export async function runAgent(
     let streamed = false;
     let hasStreamedText = false;
     try {
-      if (contextWindow > 0 && shouldCompact(estimateContextTokens(messages), contextWindow)) {
+      if (
+        contextWindow > 0 &&
+        shouldCompact(estimateContextTokens(messages), contextWindow)
+      ) {
         console.log("[正在自动压缩上下文]");
         await compactContext(messages, { signal, onUsage });
         if (shouldCompact(estimateContextTokens(messages), contextWindow)) {
-          throw new Error("自动压缩未能将上下文降至预算内，请使用 /clear 清理会话或减少输入。");
+          throw new Error(
+            "自动压缩未能将上下文降至预算内，请使用 /clear 清理会话或减少输入。",
+          );
         }
         console.log("上下文已自动压缩");
       }
@@ -82,14 +104,14 @@ export async function runAgent(
       // 如果是在模型思考/流式输出时按下了 Ctrl+C
       if (signal?.aborted) {
         if (streamed) process.stdout.write("\n");
-        messages.push({ role: "assistant", content: "操作已被用户取消。" });
+        await addMessage({ role: "assistant", content: "操作已被用户取消。" });
         return "操作已被用户打断。";
       }
       throw error;
     }
 
     if (streamed) process.stdout.write("\n");
-    messages.push(reply);
+    await addMessage(reply);
 
     if (!reply.toolCalls?.length) return reply.content;
     // 只有未流式输出过且存在文本时才兜底打印
@@ -99,7 +121,7 @@ export async function runAgent(
     for (const call of reply.toolCalls) {
       // 只要被打断了，后续所有工具不再执行，直接填 Cancelled by user
       if (signal?.aborted) {
-        messages.push({
+        await addMessage({
           role: "tool",
           toolCallId: call.id,
           content: "Cancelled by user",
@@ -114,7 +136,7 @@ export async function runAgent(
         console.log(formatDiff(result));
       }
 
-      messages.push({ role: "tool", toolCallId: call.id, content: result });
+      await addMessage({ role: "tool", toolCallId: call.id, content: result });
     }
 
     // 本轮工具处理完毕（或被中断跳过），若是打断状态则直接退出

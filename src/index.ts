@@ -3,6 +3,7 @@ import { runAgent } from "./agent.ts";
 import { compactContext } from "./compaction.ts";
 import type { Message, TokenUsage } from "./types.ts";
 import { createSessionUsage, recordUsage, formatUsage } from "./usage.ts";
+import { appendMessage, createSession } from "./session.ts";
 
 let currentAbortController: AbortController | null = null;
 const rl = readline.createInterface({
@@ -31,6 +32,12 @@ function onUsage(usage: TokenUsage | null): void {
   console.log(formatUsage(usage, sessionUsage));
 }
 
+let session = await createSession(process.cwd());
+
+async function onMessage(message: Message): Promise<void> {
+  await appendMessage(session.filePath, message);
+}
+
 const initialTask = process.argv.slice(2).join(" ").trim();
 if (initialTask) {
   currentAbortController = new AbortController();
@@ -38,6 +45,7 @@ if (initialTask) {
     await runAgent(initialTask, messages, {
       signal: currentAbortController.signal,
       onUsage,
+      onMessage,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -53,13 +61,19 @@ repl: while (true) {
 
   currentAbortController = new AbortController();
   try {
-    const options = { signal: currentAbortController.signal, onUsage };
+    const options = {
+      signal: currentAbortController.signal,
+      onUsage,
+      onMessage,
+    };
     switch (input) {
       case "/exit":
       case "/quit":
         rl.close();
         break repl;
       case "/clear":
+        session = await createSession(process.cwd());
+
         messages.length = 0;
         sessionUsage = createSessionUsage();
         console.log("会话已清空");
@@ -67,7 +81,9 @@ repl: while (true) {
       case "/compact": {
         console.log("[正在压缩上下文]");
         const changed = await compactContext(messages, options);
-        console.log(changed ? "上下文已压缩" : "上下文未修改：历史不足或摘要未缩短历史。");
+        console.log(
+          changed ? "上下文已压缩" : "上下文未修改：历史不足或摘要未缩短历史。",
+        );
         break;
       }
       default:
