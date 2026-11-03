@@ -52,7 +52,12 @@ export type ToolCall =
 // 先用自己的消息格式，后续在 llm.ts 中转换成模型 API 的格式。
 export type Message =
   | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string; toolCalls?: ToolCall[] }
+  | {
+      role: "assistant";
+      content: string;
+      toolCalls?: ToolCall[];
+      usage?: TokenUsage;
+    }
   | { role: "tool"; toolCallId: string; content: string };
 
 export type ModelReply = Extract<Message, { role: "assistant" }>;

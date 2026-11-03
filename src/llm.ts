@@ -104,6 +104,7 @@ export async function callModel(
 
   let completedResponse: OpenAI.Responses.Response | undefined;
   let streamedText = "";
+  let tokenUsage: TokenUsage | undefined;
 
   if (options?.signal?.aborted) {
     throw options.signal.reason ?? new Error("Request was aborted.");
@@ -134,11 +135,12 @@ export async function callModel(
       completedResponse = event.response;
       const usage = event.response.usage;
       if (usage) {
-        options?.onUsage?.({
+        tokenUsage = {
           inputTokens: usage.input_tokens ?? 0,
           outputTokens: usage.output_tokens ?? 0,
           totalTokens: usage.total_tokens ?? 0,
-        });
+        };
+        options?.onUsage?.(tokenUsage);
       } else {
         options?.onUsage?.(null);
       }
@@ -177,5 +179,6 @@ export async function callModel(
     role: "assistant",
     content: completedResponse.output_text || streamedText,
     ...(toolCalls.length ? { toolCalls } : {}),
+    ...(tokenUsage ? { usage: tokenUsage } : {}),
   };
 }

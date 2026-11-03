@@ -134,10 +134,13 @@ describe("callModel", () => {
 
   it("将返回的工具调用和执行结果正确回填到下一轮输入", async () => {
     createResponse
-      .mockResolvedValueOnce(response([functionCall("read_file", { path: "README.md" })]))
+      .mockResolvedValueOnce(response([functionCall("read_file", { path: "README.md" })], "", {
+        usage: { input_tokens: 12, output_tokens: 5, total_tokens: 17 },
+      }))
       .mockResolvedValueOnce(response([], "已读完"));
     const task = { role: "user" as const, content: "读取 README.md" };
     const reply = await callModel([task]);
+    expect(reply.usage).toEqual({ inputTokens: 12, outputTokens: 5, totalTokens: 17 });
 
     await callModel([
       task,
@@ -230,7 +233,7 @@ describe("callModel", () => {
     expect(onToolCall).toHaveBeenCalledWith({ name: "read_file" });
   });
 
-  it("当返回 usage 时触发 onUsage 并转换字段", async () => {
+  it("当返回 usage 时触发 onUsage，并将转换后的用量保存在回复中", async () => {
     const onUsage = vi.fn();
     createResponse.mockResolvedValue(
       response([], "ok", {
@@ -238,22 +241,24 @@ describe("callModel", () => {
       }),
     );
 
-    await callModel([], { onUsage });
+    const reply = await callModel([], { onUsage });
 
     expect(onUsage).toHaveBeenCalledWith({
       inputTokens: 12,
       outputTokens: 5,
       totalTokens: 17,
     });
+    expect(reply.usage).toEqual({ inputTokens: 12, outputTokens: 5, totalTokens: 17 });
   });
 
-  it("当未返回 usage 时触发 onUsage(null)", async () => {
+  it.each([undefined, null])("当 usage 为 %j 时触发 onUsage(null)，回复不附带用量", async (usage) => {
     const onUsage = vi.fn();
-    createResponse.mockResolvedValue(response([], "ok"));
+    createResponse.mockResolvedValue(response([], "ok", { usage }));
 
-    await callModel([], { onUsage });
+    const reply = await callModel([], { onUsage });
 
     expect(onUsage).toHaveBeenCalledWith(null);
+    expect(reply).not.toHaveProperty("usage");
   });
 
   it("当 stream 抛出 error 事件时抛出错误", async () => {
