@@ -22,6 +22,7 @@
     "npm": "11.19.1"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "diff": "^9.0.0",
     "openai": "^7.45.1"
   }

@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callModel } from "../src/llm.ts";
+import { callModel, resolveProvider } from "../src/llm.ts";
 
-const { createResponse } = vi.hoisted(() => ({ createResponse: vi.fn() }));
+const { createResponse, createChat, createAnthropicMessage } = vi.hoisted(() => ({
+  createResponse: vi.fn(),
+  createChat: vi.fn(),
+  createAnthropicMessage: vi.fn(),
+}));
 
 vi.mock("openai", () => ({
   default: class {
     responses = { create: createResponse };
+    chat = { completions: { create: createChat } };
+  },
+}));
+
+vi.mock("@anthropic-ai/sdk", () => ({
+  default: class {
+    messages = { create: createAnthropicMessage };
   },
 }));
 
@@ -78,6 +89,8 @@ function response(
 describe("callModel", () => {
   beforeEach(() => {
     createResponse.mockReset();
+    createChat.mockReset();
+    createAnthropicMessage.mockReset();
     vi.stubEnv("BASE_URL", "https://model.invalid/v1");
     vi.stubEnv("API_KEY", "test-key");
     vi.stubEnv("MODEL", "test-model");
@@ -304,5 +317,100 @@ describe("callModel", () => {
     await expect(callModel([], { signal: controller.signal })).rejects.toThrow(
       "用户打断",
     );
+  });
+});
+
+describe("resolveProvider", () => {
+  it("未配置且非 deepseek 时默认返回 openai-responses", () => {
+    expect(resolveProvider({})).toBe("openai-responses");
+  });
+
+  it("支持显式配置 PROVIDER 并支持别名与大小写容错", () => {
+    expect(resolveProvider({ PROVIDER: "openai-chat" })).toBe("openai-chat");
+    expect(resolveProvider({ PROVIDER: "  OPENAI-CHAT  " })).toBe("openai-chat");
+    expect(resolveProvider({ PROVIDER: "openai-responses" })).toBe("openai-responses");
+    expect(resolveProvider({ PROVIDER: "deepseek" })).toBe("openai-chat");
+    expect(resolveProvider({ PROVIDER: "anthropic" })).toBe("anthropic");
+    expect(resolveProvider({ PROVIDER: "claude" })).toBe("anthropic");
+  });
+
+  it("未配置 PROVIDER 时若 BASE_URL 或 MODEL 包含 deepseek 则自动选 openai-chat", () => {
+    expect(resolveProvider({ BASE_URL: "https://api.deepseek.com/v1" })).toBe("openai-chat");
+    expect(resolveProvider({ MODEL: "deepseek-chat" })).toBe("openai-chat");
+    expect(resolveProvider({ MODEL: "DeepSeek-R1" })).toBe("openai-chat");
+  });
+
+  it("未配置 PROVIDER 时若 MODEL 以 claude 开头或设置 ANTHROPIC_API_KEY 则自动选 anthropic", () => {
+    expect(resolveProvider({ MODEL: "claude-3-5-sonnet" })).toBe("anthropic");
+    expect(resolveProvider({ ANTHROPIC_API_KEY: "ant-key" })).toBe("anthropic");
+  });
+
+  it("指定不支持的 PROVIDER 时抛出异常", () => {
+    expect(() => resolveProvider({ PROVIDER: "unsupported-provider" })).toThrow(
+      "不支持的 PROVIDER",
+    );
+  });
+});
+
+describe("callModel 路由分发", () => {
+  beforeEach(() => {
+    createResponse.mockReset();
+    createChat.mockReset();
+    vi.stubEnv("BASE_URL", "https://model.invalid/v1");
+    vi.stubEnv("API_KEY", "test-key");
+    vi.stubEnv("MODEL", "test-model");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("当 PROVIDER=openai-chat 时分发至 chat.completions.create", async () => {
+    vi.stubEnv("PROVIDER", "openai-chat");
+    createChat.mockResolvedValue(
+      (async function* () {
+        yield { choices: [{ delta: { content: "来自 chat" } }] };
+      })(),
+    );
+
+    const reply = await callModel([{ role: "user", content: "hi" }]);
+    expect(reply.content).toBe("来自 chat");
+    expect(createChat).toHaveBeenCalled();
+    expect(createResponse).not.toHaveBeenCalled();
+  });
+
+  it("当未指定 PROVIDER 且 MODEL 含 deepseek 时自动分发至 chat.completions.create", async () => {
+    vi.stubEnv("MODEL", "deepseek-chat");
+    createChat.mockResolvedValue(
+      (async function* () {
+        yield { choices: [{ delta: { content: "来自 deepseek" } }] };
+      })(),
+    );
+
+    const reply = await callModel([{ role: "user", content: "hi" }]);
+    expect(reply.content).toBe("来自 deepseek");
+    expect(createChat).toHaveBeenCalled();
+    expect(createResponse).not.toHaveBeenCalled();
+  });
+
+  it("当 PROVIDER=anthropic 时分发至 Anthropic messages.create", async () => {
+    vi.stubEnv("PROVIDER", "anthropic");
+    vi.stubEnv("ANTHROPIC_API_KEY", "ant-key");
+    vi.stubEnv("MODEL", "claude-3-5-sonnet");
+    createAnthropicMessage.mockResolvedValue(
+      (async function* () {
+        yield {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "来自 claude" },
+        };
+      })(),
+    );
+
+    const reply = await callModel([{ role: "user", content: "hi" }]);
+    expect(reply.content).toBe("来自 claude");
+    expect(createAnthropicMessage).toHaveBeenCalled();
+    expect(createResponse).not.toHaveBeenCalled();
+    expect(createChat).not.toHaveBeenCalled();
   });
 });

@@ -4,10 +4,15 @@ import type {
   TokenUsage,
   ToolCall as AgentToolCall,
 } from "./types.ts";
+import { validateToolCall } from "./tool-validation.ts";
 import { toolDefinitions } from "./tool-definitions.ts";
+import { callOpenAIChat } from "./providers/openai-chat.ts";
+import { callAnthropic } from "./providers/anthropic.ts";
 import OpenAI from "openai";
 
 export type ToolCall = OpenAI.Responses.ResponseFunctionToolCall;
+
+export type Provider = "openai-chat" | "openai-responses" | "anthropic";
 
 export interface CallOptions {
   tools?: typeof toolDefinitions;
@@ -17,45 +22,33 @@ export interface CallOptions {
   signal?: AbortSignal;
 }
 
-const toolArgKeys: Record<string, string[]> = {
-  run_bash: ["command"],
-  ls: ["path"],
-  grep: ["pattern"],
-  find_files: ["pattern"],
-  read_file: ["path"],
-  write_file: ["path", "content"],
-  edit_file: ["path", "old_str", "new_str"],
-};
+export function resolveProvider(env: NodeJS.ProcessEnv = process.env): Provider {
+  const raw = env.PROVIDER?.trim().toLowerCase();
+  if (raw) {
+    if (raw === "openai-chat" || raw === "deepseek") return "openai-chat";
+    if (raw === "openai-responses") return "openai-responses";
+    if (raw === "anthropic" || raw === "claude") return "anthropic";
+    throw new Error(
+      `不支持的 PROVIDER: "${env.PROVIDER}"。可选值为 openai-chat、openai-responses、anthropic。`,
+    );
+  }
 
+  const baseUrl = env.BASE_URL?.toLowerCase() ?? "";
+  const model = (env.MODEL || env.ANTHROPIC_MODEL || "")?.toLowerCase();
+  if (model.startsWith("claude") || env.ANTHROPIC_API_KEY) {
+    return "anthropic";
+  }
+
+  if (baseUrl.includes("deepseek") || model.includes("deepseek")) {
+    return "openai-chat";
+  }
+
+  return "openai-responses";
+}
+
+// 原来的 parseToolCall 简化为代理调用
 function parseToolCall(call: ToolCall): AgentToolCall {
-  if (!call.call_id) throw new Error(`工具 ${call.name} 缺少 call_id。`);
-
-  let args: unknown;
-  try {
-    args = JSON.parse(call.arguments);
-  } catch {
-    throw new Error(`工具 ${call.name} 的参数不是有效 JSON。`);
-  }
-
-  if (args === null || typeof args !== "object" || Array.isArray(args)) {
-    throw new Error(`工具 ${call.name} 的参数必须是对象。`);
-  }
-
-  const keys = toolArgKeys[call.name];
-  if (!keys) throw new Error(`未知工具：${call.name}`);
-
-  const values = args as Record<string, unknown>;
-  for (const key of keys) {
-    if (typeof values[key] !== "string") {
-      throw new Error(`工具 ${call.name} 的参数 ${key} 必须是字符串。`);
-    }
-  }
-
-  return {
-    id: call.call_id,
-    name: call.name,
-    arguments: values,
-  } as AgentToolCall;
+  return validateToolCall(call.call_id, call.name, call.arguments);
 }
 
 function toResponseInput(messages: Message[]): OpenAI.Responses.ResponseInput {
@@ -90,8 +83,8 @@ function toResponseInput(messages: Message[]): OpenAI.Responses.ResponseInput {
   });
 }
 
-export async function callModel(
-  message: Message[],
+async function callOpenAIResponses(
+  messages: Message[],
   options?: CallOptions,
 ): Promise<ModelReply> {
   if (!process.env.BASE_URL || !process.env.MODEL || !process.env.API_KEY) {
@@ -114,7 +107,7 @@ export async function callModel(
   const stream = await client.responses.create(
     {
       model: process.env.MODEL,
-      input: toResponseInput(message),
+      input: toResponseInput(messages),
       tools: options?.tools ?? toolDefinitions,
       stream: true,
     },
@@ -182,4 +175,18 @@ export async function callModel(
     ...(toolCalls.length ? { toolCalls } : {}),
     ...(tokenUsage ? { usage: tokenUsage } : {}),
   };
+}
+
+export async function callModel(
+  messages: Message[],
+  options?: CallOptions,
+): Promise<ModelReply> {
+  const provider = resolveProvider();
+  if (provider === "anthropic") {
+    return callAnthropic(messages, options);
+  }
+  if (provider === "openai-chat") {
+    return callOpenAIChat(messages, options);
+  }
+  return callOpenAIResponses(messages, options);
 }
